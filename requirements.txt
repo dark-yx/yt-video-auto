@@ -2,5 +2,19 @@
 pip
 autopep8
 
-# App
+# App & Agentic Workflow
 flask
+langchain
+langgraph
+google-generativeai
+python-dotenv
+
+# Video & Audio Processing
+moviepy
+
+# YouTube API
+google-api-python-client
+oauth2client
+
+# Suno AI API (Unofficial)
+suno-api
