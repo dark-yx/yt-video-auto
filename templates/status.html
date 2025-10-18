@@ -1,0 +1,105 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Estado de la Generación</title>
+    <style>
+        body { font-family: sans-serif; background-color: #f4f4f9; color: #333; margin: 0; padding: 2rem; }
+        .container { max-width: 800px; margin: auto; background: #fff; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; }
+        h1 { color: #4a4a4a; }
+        #status-box { margin-top: 2rem; padding: 1.5rem; border: 1px dashed #ccc; border-radius: 4px; background: #fafafa; }
+        #progress-bar-container { width: 100%; background-color: #e0e0e0; border-radius: 4px; margin-top: 1rem; }
+        #progress-bar { width: 0%; height: 30px; background-color: #007bff; border-radius: 4px; text-align: center; line-height: 30px; color: white; transition: width 0.5s; }
+        #results { margin-top: 2rem; text-align: left; display: none; }
+        video, audio { max-width: 100%; border-radius: 4px; margin-top: 1rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Generando tu Video...</h1>
+        <p>Tu video está siendo procesado. ¡Por favor, no cierres esta página!</p>
+        
+        <div id="status-box">
+            <p><strong>ID del Trabajo:</strong> <span id="job-id">{{ job_id }}</span></p>
+            <p><strong>Estado:</strong> <span id="status-text">Iniciando...</span></p>
+            <p><strong>Detalles:</strong> <span id="details-text"></span></p>
+            <div id="progress-bar-container">
+                <div id="progress-bar">0%</div>
+            </div>
+        </div>
+
+        <div id="results">
+            <h2>¡Tu video está listo!</h2>
+            <p><strong>Título:</strong> <span id="result-title"></span></p>
+            <p><strong>Descripción:</strong></p>
+            <pre id="result-description"></pre>
+            <p><strong>Enlace de YouTube:</strong> <a id="result-link" href="#" target="_blank"></a></p>
+            
+            <h3>Video Generado:</h3>
+            <video id="result-video" controls></video>
+            
+            <h3>Canciones Generadas:</h3>
+            <div id="result-songs"></div>
+        </div>
+    </div>
+
+    <script>
+        const jobId = "{{ job_id }}";
+        const statusText = document.getElementById('status-text');
+        const detailsText = document.getElementById('details-text');
+        const progressBar = document.getElementById('progress-bar');
+        const resultsDiv = document.getElementById('results');
+
+        function pollStatus() {
+            fetch(`/api/status/${jobId}`)
+                .then(response => response.json())
+                .then(data => {
+                    statusText.textContent = data.state;
+                    detailsText.textContent = data.details;
+                    
+                    const progress = parseInt(data.progress.replace('%', ''));
+                    progressBar.style.width = `${progress}%`;
+                    progressBar.textContent = `${progress}%`;
+
+                    if (data.state === 'SUCCESS') {
+                        // Detener la encuesta y mostrar los resultados
+                        clearInterval(intervalId);
+                        displayResults(data.result);
+                    } else if (data.state === 'FAILURE') {
+                        // Detener la encuesta en caso de fallo
+                        clearInterval(intervalId);
+                    }
+                });
+        }
+
+        function displayResults(result) {
+            document.getElementById('status-box').style.display = 'none';
+            resultsDiv.style.display = 'block';
+
+            document.getElementById('result-title').textContent = result.title;
+            document.getElementById('result-description').textContent = result.description;
+            const link = document.getElementById('result-link');
+            link.href = result.youtube_url;
+            link.textContent = result.youtube_url;
+            
+            const videoPlayer = document.getElementById('result-video');
+            videoPlayer.src = result.video_path;
+            
+            const songsContainer = document.getElementById('result-songs');
+            result.song_paths.forEach((path, index) => {
+                const audio = document.createElement('audio');
+                audio.controls = true;
+                audio.src = path;
+                songsContainer.appendChild(document.createTextNode(`Canción ${index + 1}:`));
+                songsContainer.appendChild(audio);
+                songsContainer.appendChild(document.createElement('br'));
+            });
+        }
+
+        // Empezar a sondear el estado cada 3 segundos
+        const intervalId = setInterval(pollStatus, 3000);
+    </script>
+</body>
+</html>

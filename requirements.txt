@@ -9,6 +9,10 @@ langgraph
 google-generativeai
 python-dotenv
 
+# Background Task Queue
+celery
+redis
+
 # Video & Audio Processing
 moviepy
 
