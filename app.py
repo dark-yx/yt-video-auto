@@ -1,12 +1,16 @@
 
 import os
-from flask import Flask, render_template, request, redirect, url_for, jsonify
+from flask import Flask, render_template, request, redirect, url_for, jsonify, send_from_directory
 from tasks import create_video_task
 from celery.result import AsyncResult
 
 # --- Configuración de la aplicación Flask ---
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'super-secret-key-change-it-later')
+
+# Rutas a las carpetas de salida, consistentes con config.py
+OUTPUT_FOLDER = 'output'
+SONGS_FOLDER = 'songs'
 
 # --- Rutas de la aplicación web ---
 
@@ -19,7 +23,6 @@ def index():
         num_songs = int(request.form['num_songs'])
 
         # 2. Lanzar la tarea de Celery en segundo plano
-        # .delay() es la forma de llamar a una tarea para que se ejecute en el worker
         task = create_video_task.delay(user_prompt, song_style, num_songs)
 
         # 3. Redirigir al usuario a la página de estado, pasando el ID de la tarea
@@ -29,12 +32,12 @@ def index():
 
 @app.route('/status/<job_id>')
 def status(job_id):
-    # Simplemente renderizamos la página de estado, el frontend se encargará del resto
+    # Renderiza la página que sondeará el estado de la tarea
     return render_template('status.html', job_id=job_id)
 
 @app.route('/api/status/<job_id>')
 def job_status_api(job_id):
-    # Esta es la API clave que el frontend consulta (sondea)
+    # API que el frontend consulta para obtener el progreso de la tarea
     task = AsyncResult(job_id)
     
     if task.state == 'PENDING':
@@ -49,8 +52,9 @@ def job_status_api(job_id):
             'progress': task.info.get('progress', '0%'),
             'details': task.info.get('details', '')
         }
-        if 'result' in task.info:
-             response['result'] = task.info['result']
+        # Si la tarea ha terminado con éxito (SUCCESS), el resultado estará en task.info
+        if task.state == 'SUCCESS':
+             response['result'] = task.info
     else:
         # El estado es FAILURE
         response = {
@@ -61,14 +65,17 @@ def job_status_api(job_id):
 
     return jsonify(response)
 
+# --- Rutas para servir archivos generados ---
 
 @app.route('/videos/<path:filename>')
 def serve_video(filename):
-    return send_from_directory(os.path.join(app.root_path, 'videos'), filename)
+    # Sirve el video final desde la carpeta 'output'
+    return send_from_directory(os.path.join(os.getcwd(), OUTPUT_FOLDER), filename, as_attachment=False)
 
 @app.route('/songs/<path:filename>')
 def serve_song(filename):
-    return send_from_directory(os.path.join(app.root_path, 'songs'), filename)
+    # Sirve las canciones generadas desde la carpeta 'songs'
+    return send_from_directory(os.path.join(os.getcwd(), SONGS_FOLDER), filename, as_attachment=False)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True)

@@ -1,1 +1,12 @@
-.venv
+.idx
+.venv/
+__pycache__/
+*.pyc
+
+# Carpetas de medios generados
+clips/
+output/
+songs/
+
+# Archivos de configuración local
+.env

@@ -4,32 +4,38 @@ from src.config import GOOGLE_API_KEY
 
 genai.configure(api_key=GOOGLE_API_KEY)
 
-def generate_youtube_metadata(lyrics: str) -> dict:
+def generate_youtube_metadata(lyrics: str, user_prompt: str) -> dict:
     """
-    Genera el título, la descripción y las etiquetas de YouTube a partir de las letras de las canciones.
+    Genera metadatos de YouTube a partir de las letras y el aviso inicial.
     """
     print("Generando metadatos de YouTube...")
     try:
         model = genai.GenerativeModel('gemini-pro')
         prompt = (
-            "Basado en las siguientes letras de canciones, genera un título de video de YouTube, "
-            "una descripción y una lista de etiquetas separadas por comas. El título debe ser pegadizo y "
-            "relevante. La descripción debe ser atractiva y resumir el estado de ánimo de la canción. "
-            "Las etiquetas deben ser palabras clave relevantes.\n\n" + lyrics
+            f"Basado en el siguiente aviso del usuario: '{user_prompt}' y las letras de la canción:\n\n{lyrics}\n\n"
+            "Genera lo siguiente para un video de YouTube:\n"
+            "1. Un título de video pegadizo.\n"
+            "2. Una descripción atractiva y que resuma el ambiente.\n"
+            "3. Una lista de etiquetas relevantes separadas por comas.\n\n"
+            "Formatea la salida exactamente así:\n"
+            "Título: [Tu título aquí]\n"
+            "Descripción: [Tu descripción aquí]\n"
+            "Etiquetas: [etiqueta1, etiqueta2, etiqueta3]"
         )
         response = model.generate_content(prompt)
-
-        # Analizar la respuesta para extraer título, descripción y etiquetas
-        parts = response.text.split('\n')
-        title = parts[0].replace("Título:", "").strip()
-        description = parts[1].replace("Descripción:", "").strip()
-        tags = parts[2].replace("Etiquetas:", "").strip()
+        
+        # Parse the response
+        lines = response.text.strip().split('\n')
+        title = lines[0].replace("Título:", "").strip()
+        description = lines[1].replace("Descripción:", "").strip()
+        tags_str = lines[2].replace("Etiquetas:", "").strip()
+        tags = [tag.strip() for tag in tags_str.split(',')]
 
         return {"title": title, "description": description, "tags": tags}
     except Exception as e:
         print(f"Error al generar metadatos: {e}")
         return {
-            "title": "Mi nueva canción (título predeterminado)",
-            "description": "Disfruta de esta nueva canción generada por IA.",
-            "tags": "música de ia,suno,video musical"
+            "title": f"Canción sobre {user_prompt}",
+            "description": "Disfruta esta canción creada con IA.",
+            "tags": ["AI music", "suno", "music video"]
         }

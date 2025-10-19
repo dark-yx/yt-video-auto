@@ -3,103 +3,92 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Estado de la Generación</title>
-    <style>
-        body { font-family: sans-serif; background-color: #f4f4f9; color: #333; margin: 0; padding: 2rem; }
-        .container { max-width: 800px; margin: auto; background: #fff; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; }
-        h1 { color: #4a4a4a; }
-        #status-box { margin-top: 2rem; padding: 1.5rem; border: 1px dashed #ccc; border-radius: 4px; background: #fafafa; }
-        #progress-bar-container { width: 100%; background-color: #e0e0e0; border-radius: 4px; margin-top: 1rem; }
-        #progress-bar { width: 0%; height: 30px; background-color: #007bff; border-radius: 4px; text-align: center; line-height: 30px; color: white; transition: width 0.5s; }
-        #results { margin-top: 2rem; text-align: left; display: none; }
-        video, audio { max-width: 100%; border-radius: 4px; margin-top: 1rem; }
-    </style>
+    <title>Procesando Video...</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script>
+        // Esta función sondeará nuestra API de estado para obtener actualizaciones
+        function checkJobStatus(jobId) {
+            const statusDiv = document.getElementById('status-updates');
+            const progressBar = document.getElementById('progress-bar');
+            const progressText = document.getElementById('progress-text');
+            const resultDiv = document.getElementById('result');
+
+            const interval = setInterval(() => {
+                fetch(`/api/status/${jobId}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        // Actualizar los detalles del estado
+                        statusDiv.innerHTML = `<p>${data.details}</p>`;
+                        
+                        // Actualizar la barra de progreso
+                        progressBar.style.width = data.progress;
+                        progressText.textContent = data.progress;
+                        
+                        // Comprobar si la tarea ha terminado
+                        if (data.state === 'SUCCESS' || data.state === 'FAILURE') {
+                            clearInterval(interval);
+                            progressBar.style.width = '100%';
+                            
+                            if (data.state === 'SUCCESS') {
+                                progressText.textContent = '¡Completado!';
+                                document.querySelector('h1').textContent = '¡Video Generado con Éxito!';
+                                // Mostrar los resultados finales
+                                const result = data.result;
+                                resultDiv.innerHTML = `
+                                    <h3>${result.title}</h3>
+                                    <p><strong>Descripción:</strong> ${result.description}</p>
+                                    <p><strong>Enlace de YouTube:</strong> <a href="${result.youtube_url}" target="_blank">${result.youtube_url}</a></p>
+                                    <p><strong>Archivos generados:</strong></p>
+                                    <ul>
+                                        <li>Video: <a href="/videos/${result.video_path.split('/').pop()}">${result.video_path}</a></li>
+                                        ${result.song_paths.map(p => `<li>Canción: <a href="/songs/${p.split('/').pop()}">${p}</a></li>`).join('')}
+                                    </ul>
+                                    <a href="/" class="button">Crear otro video</a>
+                                `;
+                            } else { // FAILURE
+                                progressText.textContent = '¡Error!';
+                                document.querySelector('h1').textContent = 'La Tarea ha Fallado';
+                                resultDiv.innerHTML = `
+                                    <p>Ocurrió un error durante el proceso:</p>
+                                    <pre style="background-color: #333; color: #ff8a80; padding: 15px; border-radius: 5px;">${data.details}</pre>
+                                    <a href="/" class="button">Intentar de Nuevo</a>
+                                `;
+                            }
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error al sondear el estado:', error);
+                        statusDiv.innerHTML = `<p>Error al conectar con el servidor. Reintentando...</p>`
+                    });
+            }, 2500); // Sondear cada 2.5 segundos
+        }
+
+        // Iniciar el sondeo cuando la página se cargue
+        window.onload = () => {
+            const jobId = document.body.dataset.jobId;
+            checkJobStatus(jobId);
+        };
+    </script>
 </head>
-<body>
+<body data-job-id="{{ job_id }}">
     <div class="container">
         <h1>Generando tu Video...</h1>
-        <p>Tu video está siendo procesado. ¡Por favor, no cierres esta página!</p>
-        
-        <div id="status-box">
-            <p><strong>ID del Trabajo:</strong> <span id="job-id">{{ job_id }}</span></p>
-            <p><strong>Estado:</strong> <span id="status-text">Iniciando...</span></p>
-            <p><strong>Detalles:</strong> <span id="details-text"></span></p>
+        <p>Tu video se está procesando en segundo plano. Puedes ver el progreso a continuación.</p>
+
+        <div class="progress-container">
             <div id="progress-bar-container">
-                <div id="progress-bar">0%</div>
+                <div id="progress-bar" style="width: 0%;"></div>
             </div>
+            <span id="progress-text">0%</span>
         </div>
 
-        <div id="results">
-            <h2>¡Tu video está listo!</h2>
-            <p><strong>Título:</strong> <span id="result-title"></span></p>
-            <p><strong>Descripción:</strong></p>
-            <pre id="result-description"></pre>
-            <p><strong>Enlace de YouTube:</strong> <a id="result-link" href="#" target="_blank"></a></p>
-            
-            <h3>Video Generado:</h3>
-            <video id="result-video" controls></video>
-            
-            <h3>Canciones Generadas:</h3>
-            <div id="result-songs"></div>
+        <div id="status-updates">
+            <p>Inicializando...</p>
+        </div>
+
+        <div id="result">
+            <!-- Los detalles del video final aparecerán aquí -->
         </div>
     </div>
-
-    <script>
-        const jobId = "{{ job_id }}";
-        const statusText = document.getElementById('status-text');
-        const detailsText = document.getElementById('details-text');
-        const progressBar = document.getElementById('progress-bar');
-        const resultsDiv = document.getElementById('results');
-
-        function pollStatus() {
-            fetch(`/api/status/${jobId}`)
-                .then(response => response.json())
-                .then(data => {
-                    statusText.textContent = data.state;
-                    detailsText.textContent = data.details;
-                    
-                    const progress = parseInt(data.progress.replace('%', ''));
-                    progressBar.style.width = `${progress}%`;
-                    progressBar.textContent = `${progress}%`;
-
-                    if (data.state === 'SUCCESS') {
-                        // Detener la encuesta y mostrar los resultados
-                        clearInterval(intervalId);
-                        displayResults(data.result);
-                    } else if (data.state === 'FAILURE') {
-                        // Detener la encuesta en caso de fallo
-                        clearInterval(intervalId);
-                    }
-                });
-        }
-
-        function displayResults(result) {
-            document.getElementById('status-box').style.display = 'none';
-            resultsDiv.style.display = 'block';
-
-            document.getElementById('result-title').textContent = result.title;
-            document.getElementById('result-description').textContent = result.description;
-            const link = document.getElementById('result-link');
-            link.href = result.youtube_url;
-            link.textContent = result.youtube_url;
-            
-            const videoPlayer = document.getElementById('result-video');
-            videoPlayer.src = result.video_path;
-            
-            const songsContainer = document.getElementById('result-songs');
-            result.song_paths.forEach((path, index) => {
-                const audio = document.createElement('audio');
-                audio.controls = true;
-                audio.src = path;
-                songsContainer.appendChild(document.createTextNode(`Canción ${index + 1}:`));
-                songsContainer.appendChild(audio);
-                songsContainer.appendChild(document.createElement('br'));
-            });
-        }
-
-        // Empezar a sondear el estado cada 3 segundos
-        const intervalId = setInterval(pollStatus, 3000);
-    </script>
 </body>
 </html>

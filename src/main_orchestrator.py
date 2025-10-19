@@ -42,9 +42,22 @@ TOTAL_STEPS = 5 # Número total de pasos principales
 
 def node_generate_lyrics(state: AgentState) -> Dict[str, List[str]]:
     task = state["task_instance"]
+    job_id = task.request.id if task else 'local_run' # Obtener un ID único
     update_progress(task, 1, TOTAL_STEPS, f"Generando {state['num_songs']} conjunto(s) de letras...")
     
     lyrics_list = generate_lyrics(state["user_prompt"], state["song_style"], state["num_songs"])
+
+    # --- NUEVO: Guardar letras en archivos .txt ---
+    lyrics_dir = "songs"
+    os.makedirs(lyrics_dir, exist_ok=True)
+    
+    for i, lyrics in enumerate(lyrics_list):
+        file_path = os.path.join(lyrics_dir, f"letras_{job_id}_{i+1}.txt")
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(lyrics)
+        print(f"Letras guardadas en: {file_path}")
+    # --- FIN DE LA MODIFICACIÓN ---
+
     return {"lyrics_list": lyrics_list}
 
 def node_create_songs(state: AgentState) -> Dict[str, List[str]]:
