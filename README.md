@@ -36,9 +36,9 @@ graph TD
         H -->|Llamada a la API| L(suno_api.py - SunoApiClient);
         L -->|POST /api/generate/v2-web/| M[API Interna de Suno];
         M -->|Responde con IDs de canciones| L;
-        L -->|GET /api/feed/v2?ids=...| M;
+        L -->|"GET /api/feed/v2?ids=..."| M;
         M -->|Responde con estado de canciones| L;
-        L -->|POST /api/billing/clips/{id}/download/| M;
+        L -->|"POST /api/billing/clips/{id}/download/"| M;
         M -->|Responde con URL de descarga| L;
         L -->|Descarga el archivo .mp3| H;
     end

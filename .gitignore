@@ -9,6 +9,8 @@ __pycache__/
 *.mp4
 *.mp3
 
+.DS_Store
+
 # Archivos de configuración local
 .env
 
