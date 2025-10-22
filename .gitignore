@@ -9,6 +9,7 @@ __pycache__/
 *.mp4
 *.mp3
 
+# Archivos DB_Store
 *.DS_Store
 
 # Archivos de configuración local
