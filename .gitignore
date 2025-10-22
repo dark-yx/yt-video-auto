@@ -2,10 +2,10 @@
 __pycache__/
 *.pyc
 
-# Carpetas de medios generados
-clips/
-output/
-songs/
+# Contenido de medios generados
+clips/*
+output/*
+songs/*
 
 # Archivos de configuración local
 .env
