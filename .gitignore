@@ -2,10 +2,12 @@
 __pycache__/
 *.pyc
 
+
+
 # Contenido de medios generados
-clips/*
-output/*
-songs/*
+*.txt
+*.mp4
+*.mp3
 
 # Archivos de configuración local
 .env
