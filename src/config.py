@@ -4,11 +4,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SUNO_COOKIE = os.getenv("SUNO_COOKIE")
 
-if not GOOGLE_API_KEY:
-    raise ValueError("No se encontró la clave API de Google. Asegúrese de que su archivo .env esté configurado correctamente.")
+if not OPENAI_API_KEY:
+    raise ValueError("No se encontró la clave API de OpenAI. Asegúrese de que su archivo .env esté configurado correctamente.")
 
 if not SUNO_COOKIE:
     raise ValueError("No se encontró la cookie de Suno. Asegúrese de que su archivo .env esté configurado correctamente.")

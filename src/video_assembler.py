@@ -1,10 +1,6 @@
 
 import os
-from moviepy.editor import (
-    VideoFileClip, concatenate_videoclips, 
-    AudioFileClip, CompositeAudioClip, 
-    TextClip, CompositeVideoClip
-)
+from moviepy import VideoFileClip, concatenate_videoclips, AudioFileClip, CompositeAudioClip, TextClip, CompositeVideoClip
 from src.config import CLIPS_DIR, VIDEO_OUTPUT_PATH, OUTPUT_DIR
 from celery import Task
 

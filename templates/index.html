@@ -26,8 +26,11 @@
             <label for="style">Estilo Musical:</label>
             <input type="text" name="style" id="style" required placeholder="Ej: Pop rock, acústico, cinematográfico">
 
-            <label for="num_songs">Número de Canciones (se combinarán en un video):</label>
-            <input type="number" name="num_songs" id="num_songs" min="1" max="50" value="1" required>
+            <label for="num_female_songs">Canciones con Voz Femenina:</label>
+            <input type="number" name="num_female_songs" id="num_female_songs" min="0" max="25" value="1" required>
+
+            <label for="num_male_songs">Canciones con Voz Masculina:</label>
+            <input type="number" name="num_male_songs" id="num_male_songs" min="0" max="25" value="0" required>
 
             <button type="submit">¡Crear Video!</button>
         </form>

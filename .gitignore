@@ -1,12 +1,18 @@
-.idx
 .venv/
 __pycache__/
 *.pyc
 
-# Carpetas de medios generados
-clips/
-output/
-songs/
+
+
+# Contenido de medios generados
+*.txt
+*.mp4
+*.mp3
+
+.DS_Store
 
 # Archivos de configuración local
 .env
+
+# Archivos de control
+GEMINI.md
