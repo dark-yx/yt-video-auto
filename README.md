@@ -1,6 +1,6 @@
 # Proyecto de Creación de Videos Musicales con IA
 
-Este proyecto es una aplicación web full-stack diseñada para generar videos musicales completos a partir de un simple *prompt* de usuario. La aplicación orquesta múltiples servicios de IA para generar letras, componer música, ensamblar un video y subirlo a YouTube, todo de forma automatizada.
+Este proyecto es una aplicación web full-stack diseñada para generar videos musicales completos a partir de un simple *prompt* de usuario. La aplicación orquesta múltiples servicios de IA para generar letras, componer música con control avanzado, ensamblar un video y subirlo a YouTube, todo de forma automatizada.
 
 ## Arquitectura y Flujo de Trabajo
 
@@ -16,7 +16,7 @@ graph TD
 
     subgraph "Generación de Contenido"
         F --> G[Generar Letras];
-        G --> H[Crear Canciones con Suno];
+        G --> H[Crear Canciones con SunoApiClient];
         H --> I[Ensamblar Video];
         I --> J[Generar Metadatos];
         J --> K[Subir a YouTube];
@@ -30,54 +30,53 @@ graph TD
 
 ### Componentes Principales:
 
-1.  **Frontend (Flask Web UI)**: Una sencilla interfaz de usuario construida con Flask y plantillas HTML. Permite al usuario introducir un tema o idea, seleccionar un estilo musical y especificar el número de canciones a crear.
-2.  **Backend (Flask API)**: El servidor Flask que recibe las peticiones del usuario. No ejecuta las tareas pesadas directamente.
-3.  **Gestor de Tareas Asíncronas (Celery & Redis)**: Al recibir una solicitud, el backend crea una tarea en segundo plano utilizando Celery. Redis actúa como *message broker* (para poner la tarea en cola) y como *backend* (para almacenar el estado y el resultado). Esto evita que la aplicación web se bloquee y permite al usuario ver el progreso en tiempo real.
-4.  **Orquestador de Flujo de Trabajo (LangGraph)**: El corazón del proceso de generación. Una vez que un *worker* de Celery toma una tarea, ejecuta un grafo de estados definido con LangGraph. Este grafo gestiona cada paso de la creación del video de manera secuencial y robusta.
-5.  **Módulos de IA**:
-    *   **Generador de Letras**: Un módulo que utiliza un modelo de lenguaje para crear letras de canciones. Las letras se guardan en archivos `.txt` en la carpeta `songs/`.
-    *   **Compositor Musical (Suno AI)**: Interactúa con la API de Suno AI para generar la música a partir de las letras y el estilo definidos.
-    *   **Ensamblador de Video**: Combina las canciones y las letras en un archivo de video.
+1.  **Frontend (Flask Web UI)**: Una interfaz de usuario que permite al usuario introducir un tema, un estilo musical y, más importante, especificar cuántas canciones con **voz femenina** y **voz masculina** desea crear.
+2.  **Backend (Flask API)**: El servidor Flask que recibe las peticiones y las delega a un sistema de tareas en segundo plano.
+3.  **Gestor de Tareas Asíncronas (Celery & Redis)**: Al recibir una solicitud, el backend crea una tarea con Celery. Redis gestiona la cola de tareas y almacena los resultados, permitiendo que la aplicación no se bloquee y que el usuario pueda ver el progreso.
+4.  **Orquestador de Flujo de Trabajo (LangGraph)**: El corazón del sistema. Un grafo de estados que gestiona cada paso de la creación del video. Ahora incluye lógica para distribuir la generación de canciones entre voces masculinas y femeninas según lo solicitado.
+5.  **Módulos de IA y Clientes de API**:
+    *   **Generador de Letras**: Utiliza `gpt-4o-mini` para crear letras de canciones basadas en el prompt y estilo del usuario.
+    *   **Compositor Musical (`SunoApiClient`)**: Interactúa directamente con la API interna de Suno a través de un **cliente personalizado (`suno_api.py`)**. Este es el componente clave que hemos desarrollado y que permite las funcionalidades avanzadas.
+    *   **Ensamblador de Video**: Combina las canciones generadas y sus letras (como subtítulos) en un archivo de video final.
     *   **Generador de Metadatos**: Crea títulos, descripciones y etiquetas optimizadas para YouTube.
-    *   **Cargador a YouTube**: Utiliza la API de YouTube para subir el video final a una cuenta especificada.
+    *   **Cargador a YouTube**: Sube el video final a una cuenta de YouTube especificada.
+
+### Funcionalidades Avanzadas de Generación
+
+Gracias al nuevo `SunoApiClient`, el sistema ahora soporta:
+
+*   **Generación con Modelo v5**: Todas las canciones se generan utilizando el modelo `chirp-crow` (v5) de Suno para asegurar la máxima calidad de audio.
+*   **Control de Género Vocal**: Desde la interfaz principal, se puede definir el número exacto de canciones a generar con voz femenina y masculina.
+*   **Generación Inteligente de Instrumentales**: Si se inicia una generación de canción pero se omite la letra, el sistema lo detecta automáticamente y le pide a Suno que genere una pista instrumental, permitiendo además especificar un título.
+*   **Organización por Proyectos**: Todas las canciones generadas a través de la API se guardan automáticamente en un **ID de proyecto predefinido** en la cuenta de Suno, facilitando la organización.
 
 ## Stack Tecnológico
 
 *   **Backend**: Python, Flask
-*   **Tareas Asíncronas**: Celery
-*   **Broker y Backend de Tareas**: Redis
+*   **Tareas Asíncronas**: Celery, Redis
 *   **Orquestación**: LangGraph
 *   **IA y APIs Externas**:
-    *   Generación de lenguaje (Letras, Metadatos): (No especificado, probablemente un LLM como Gemini/GPT)
-    *   Generación Musical: Suno AI
+    *   Generación de Lenguaje: OpenAI (`gpt-4o-mini`)
+    *   Generación Musical: Suno AI (vía API interna con cliente propio)
     *   Plataforma de Video: YouTube Data API v3
-*   **Frontend**: HTML, JavaScript (para sondeo de estado)
-*   **Librerías de Python Clave**: `flask`, `celery`, `redis`, `langgraph`, `google-api-python-client`, etc. (ver `requirements.txt`).
+*   **Frontend**: HTML, JavaScript
+*   **Librerías Clave**: `flask`, `celery`, `redis`, `langgraph`, `openai`, `moviepy`, `google-api-python-client`.
 
 ## Estructura de Archivos
 
 ```
 .
-├── .gitignore
-├── GEMINI.md
-├── README.md
-├── app.py
-├── clips/                  # Almacena los clips de video generados
-├── output/                 # Almacena los videos finales ensamblados
-├── songs/                  # Almacena los audios (.mp3) y las letras (.txt)
-├── requirements.txt
-├── src
-│   ├── config.py
-│   ├── lyric_generator.py
-│   ├── main_orchestrator.py
-│   ├── metadata_generator.py
-│   ├── suno_handler.py
-│   ├── video_assembler.py
-│   └── youtube_uploader.py
-├── tasks.py
-└── templates
-    ├── index.html
-    └── status.html
+├── app.py                  # Servidor Flask y rutas API
+├── tasks.py                # Definición de tareas de Celery
+├── templates/
+│   ├── index.html          # Formulario principal
+│   └── ...
+├── src/
+│   ├── suno_api.py         # NUEVO: Cliente de bajo nivel para la API de Suno
+│   ├── suno_handler.py     # Manejador que usa SunoApiClient
+│   ├── main_orchestrator.py  # Lógica principal con LangGraph
+│   └── ...                 # Otros módulos (generación, video, etc.)
+└── ...
 ```
 
 ## Cómo Empezar
@@ -85,55 +84,32 @@ graph TD
 ### Prerrequisitos
 
 *   Python 3.8+
-*   Redis Server (corriendo en `localhost:6379`)
-*   Credenciales para las APIs de IA (Suno, YouTube, y el LLM para letras).
-*   Una cuenta de Suno AI con créditos.
+*   Redis Server corriendo localmente.
+*   Un archivo `.env` con las credenciales para `OPENAI_API_KEY` y `SUNO_COOKIE`.
 *   Un proyecto en Google Cloud con la API de YouTube Data v3 habilitada y un archivo `client_secrets.json`.
 
 ### Instalación y Ejecución
 
-1.  **Clonar el repositorio:**
-    ```bash
-    git clone <URL-DEL-REPOSITORIO>
-    cd <NOMBRE-DEL-REPOSITORIO>
-    ```
-
-2.  **Crear y activar un entorno virtual:**
+1.  **Entorno virtual e instalación:**
     ```bash
     python -m venv .venv
     source .venv/bin/activate
-    ```
-
-3.  **Instalar las dependencias:**
-    ```bash
     pip install -r requirements.txt
     ```
 
-4.  **Configurar las variables de entorno:**
-    Crea un archivo `.env` en la raíz del proyecto y añade las claves de API necesarias.
-    ```
-    SUNO_COOKIE="tu_cookie_de_suno"
-    SECRET_KEY="una_clave_secreta_muy_larga_y_aleatoria"
-    # Otras claves que puedan ser necesarias
-    ```
-
-5.  **Asegurarse de que Redis esté corriendo:**
-    Puedes iniciar Redis con Docker o instalarlo localmente.
+2.  **Iniciar Servicios (en terminales separadas):**
     ```bash
+    # Terminal 1: Servidor Redis
     redis-server
-    ```
 
-6.  **Iniciar un worker de Celery:**
-    En una terminal, con el entorno virtual activado, ejecuta:
-    ```bash
+    # Terminal 2: Worker de Celery
     celery -A tasks.celery_app worker --loglevel=info
-    ```
 
-7.  **Iniciar la aplicación Flask:**
-    En otra terminal, con el entorno virtual activado, ejecuta:
-    ```bash
+    # Terminal 3: Aplicación Flask
     flask run --host=0.0.0.0 --port=8080
     ```
 
-8.  **Acceder a la aplicación:**
-    Abre tu navegador y ve a `http://localhost:8080`.
+3.  **Acceder y Usar:**
+    *   Abre tu navegador en `http://localhost:8080`.
+    *   Rellena el tema de la canción, el estilo, y el número de canciones que deseas para cada género vocal.
+    *   Haz clic en "¡Crear Video!" y sigue el progreso en la página de estado.

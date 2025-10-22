@@ -1,45 +1,65 @@
-
 import os
-from suno import Suno, Song
-from src.config import SUNO_COOKIE, SONGS_DIR
+import re
+from src.suno_api import SunoApiClient
+from src.config import SONGS_DIR
 from celery import Task
 
-def create_and_download_song(lyrics: str, song_style: str, song_title: str, task_instance: Task = None) -> str:
+def create_and_download_song(lyrics: str, song_style: str, song_title: str, vocal_gender: str = 'f', task_instance: Task = None) -> list[str]:
     """
-    Genera una canción con la API de Suno, informa del progreso y la descarga.
-    Devuelve la ruta del archivo de la canción descargada.
+    Generates two songs with the new SunoApiClient, reports progress, and downloads them.
+    Returns a list with the file paths of the downloaded songs.
     """
-    progress_msg = f"Enviando solicitud para '{song_title}' a la IA de Suno y esperando la generación..."
+    progress_msg = f"Enviando solicitud para '{song_title}' a SunoApiClient y esperando la generación..."
     print(progress_msg)
     if task_instance:
-        # Obtenemos el progreso actual para no retroceder
-        current_progress = int(task_instance.info.get('progress', '0').replace('%', ''))
         task_instance.update_state(
             state='PROGRESS',
-            meta={'details': progress_msg, 'progress': f'{current_progress}%'} # Mantenemos el progreso
+            meta={'details': progress_msg}
         )
 
     try:
-        client = Suno(cookie=SUNO_COOKIE)
-        songs: list[Song] = client.generate(
-            prompt=lyrics,
-            is_custom=True,
+        client = SunoApiClient()
+        
+        # Determine if an instrumental is needed based on the lyrics
+        make_instrumental = not bool(lyrics and lyrics.strip())
+
+        generation_response = client.generate(
             tags=song_style,
             title=song_title,
-            wait_for_song=True, # Esta es una llamada de bloqueo
+            prompt=lyrics,
+            make_instrumental=make_instrumental,
+            vocal_gender=vocal_gender
         )
 
-        song = songs[0]
-        # Asegurarse de que el nombre del archivo sea seguro para el sistema de archivos
-        safe_title = "".join(c for c in song_title if c.isalnum() or c in (' ', '-')).rstrip()
-        song_path = os.path.join(SONGS_DIR, f"{safe_title.replace(' ', '_')}.mp3") # Cambiado a mp3, ya que es audio
+        song_ids = [clip['id'] for clip in generation_response['clips']]
         
-        print(f"Descargando canción '{song_title}' en: {song_path}")
-        song.download(save_path=song_path)
+        progress_msg = f"Canciones enviadas a generar. Esperando a que finalicen (IDs: { ', '.join(song_ids) })..."
+        print(progress_msg)
+        if task_instance:
+            task_instance.update_state(state='PROGRESS', meta={'details': progress_msg})
 
-        print(f"Canción descargada con éxito.")
-        return song_path
+        completed_songs = client.poll_for_song(song_ids)
+
+        song_paths = []
+        # Ensure we only process up to the number of songs generated (usually 2)
+        for i, song in enumerate(completed_songs[:2]):
+            # Sanitize the title to create a base for the filename
+            safe_title = re.sub(r'[\\/*?"<>|]', "", song['title'])
+            # Create the custom filename that the main orchestrator expects (e.g., "1_My_Song.mp3")
+            output_filename = f"{i+1}_{safe_title.replace(' ', '_')}.mp3"
+            
+            print(f"Descargando canción '{song['title']}' como '{output_filename}'...")
+            
+            file_path = client.download_song(
+                song_id=song['id'], 
+                song_title=song['title'],
+                output_filename=output_filename
+            )
+            song_paths.append(file_path)
+
+        print("Canciones descargadas con éxito.")
+        return song_paths
+
     except Exception as e:
-        print(f"Error al interactuar con la API de Suno: {e}")
-        # Es importante relanzar la excepción para que la tarea de Celery falle
+        print(f"Error al interactuar con la API de Suno (SunoApiClient): {e}")
         raise

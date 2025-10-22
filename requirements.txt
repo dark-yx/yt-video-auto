@@ -6,7 +6,7 @@ autopep8
 flask
 langchain
 langgraph
-google-generativeai
+openai
 python-dotenv
 
 # Background Task Queue
@@ -21,4 +21,4 @@ google-api-python-client
 oauth2client
 
 # Suno AI API (Unofficial)
-suno-api
+SunoAI

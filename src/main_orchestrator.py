@@ -16,7 +16,8 @@ from src.youtube_uploader import upload_video_to_youtube
 class AgentState(TypedDict):
     user_prompt: str
     song_style: str
-    num_songs: int
+    num_female_songs: int
+    num_male_songs: int
     lyrics_list: List[str]
     song_paths: List[str]
     video_metadata: Dict[str, str]
@@ -42,21 +43,10 @@ TOTAL_STEPS = 5 # Número total de pasos principales
 
 def node_generate_lyrics(state: AgentState) -> Dict[str, List[str]]:
     task = state["task_instance"]
-    job_id = task.request.id if task else 'local_run' # Obtener un ID único
-    update_progress(task, 1, TOTAL_STEPS, f"Generando {state['num_songs']} conjunto(s) de letras...")
+    total_songs = state["num_female_songs"] + state["num_male_songs"]
+    update_progress(task, 1, TOTAL_STEPS, f"Generando {total_songs} conjunto(s) de letras...")
     
-    lyrics_list = generate_lyrics(state["user_prompt"], state["song_style"], state["num_songs"])
-
-    # --- NUEVO: Guardar letras en archivos .txt ---
-    lyrics_dir = "songs"
-    os.makedirs(lyrics_dir, exist_ok=True)
-    
-    for i, lyrics in enumerate(lyrics_list):
-        file_path = os.path.join(lyrics_dir, f"letras_{job_id}_{i+1}.txt")
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(lyrics)
-        print(f"Letras guardadas en: {file_path}")
-    # --- FIN DE LA MODIFICACIÓN ---
+    lyrics_list = generate_lyrics(state["user_prompt"], state["song_style"], total_songs)
 
     return {"lyrics_list": lyrics_list}
 
@@ -64,13 +54,61 @@ def node_create_songs(state: AgentState) -> Dict[str, List[str]]:
     task = state["task_instance"]
     update_progress(task, 2, TOTAL_STEPS, "Componiendo canciones con Suno AI...")
 
-    song_paths = []
-    for i, lyrics in enumerate(state["lyrics_list"]):
+    num_female = state.get("num_female_songs", 0)
+    num_male = state.get("num_male_songs", 0)
+    lyrics_list = state["lyrics_list"]
+    song_style = state["song_style"]
+
+    song_jobs = []
+    # Create a list of jobs with lyrics and gender
+    for i in range(num_female):
+        song_jobs.append({"lyrics": lyrics_list[i], "gender": "f"})
+    for i in range(num_male):
+        song_jobs.append({"lyrics": lyrics_list[num_female + i], "gender": "m"})
+
+    song_pairs = []
+    lyrics_dir = "songs"
+    os.makedirs(lyrics_dir, exist_ok=True)
+
+    # Process each job (a lyric set and a gender)
+    for i, job in enumerate(song_jobs):
         title = f"Generated_Song_{i+1}"
-        song_path = create_and_download_song(lyrics, state["song_style"], title, task)
-        if song_path:
-            song_paths.append(song_path)
-    return {"song_paths": song_paths}
+        # Call the updated handler with the specified gender
+        new_song_paths = create_and_download_song(
+            lyrics=job["lyrics"],
+            song_style=song_style,
+            song_title=title,
+            vocal_gender=job["gender"],
+            task_instance=task
+        )
+        
+        if new_song_paths and len(new_song_paths) == 2:
+            song_pairs.append((job["lyrics"], new_song_paths))
+
+            # Save lyrics file
+            for song_path in new_song_paths:
+                base_path, _ = os.path.splitext(song_path)
+                lyrics_path = f"{base_path}.txt"
+                try:
+                    with open(lyrics_path, 'w', encoding='utf-8') as f:
+                        f.write(job["lyrics"])
+                    print(f"Letras para '{os.path.basename(song_path)}' guardadas en: {lyrics_path}")
+                except IOError as e:
+                    print(f"Error al guardar el archivo de letras {lyrics_path}: {e}")
+
+    # The logic for ordering the final song paths and lyrics can also remain
+    final_song_paths = []
+    final_lyrics = []
+
+    for lyric, paths in song_pairs:
+        final_song_paths.append(paths[0])
+        final_lyrics.append(lyric)
+
+    for lyric, paths in song_pairs:
+        final_song_paths.append(paths[1])
+        final_lyrics.append(lyric)
+
+    return {"song_paths": final_song_paths, "lyrics_list": final_lyrics}
 
 def node_assemble_video(state: AgentState) -> Dict[str, str]:
     task = state["task_instance"]

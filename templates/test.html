@@ -1,0 +1,159 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel de Pruebas para Suno API Custom</title>
+    <style>
+        body { font-family: sans-serif; background-color: #f0f2f5; color: #333; margin: 0; padding: 2rem; }
+        .container { max-width: 800px; margin: auto; background: #fff; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        h1, h2 { color: #1c1e21; border-bottom: 2px solid #f0f2f5; padding-bottom: 0.5rem; }
+        .status-box { border: 1px solid #ddd; margin-top: 1.5rem; border-radius: 8px; overflow: hidden; }
+        .status-header { background-color: #e9ecef; padding: 1rem; font-weight: bold; }
+        .status-content { padding: 1rem; }
+        .status-item { margin-bottom: 0.5rem; padding: 0.5rem; border-radius: 4px; }
+        .success { background-color: #d4edda; color: #155724; border-left: 5px solid #28a745; }
+        .error { background-color: #f8d7da; color: #721c24; border-left: 5px solid #dc3545; }
+        input, textarea { width: 100%; padding: 0.8rem; border: 1px solid #ddd; border-radius: 4px; font-size: 1rem; box-sizing: border-box; margin-bottom: 1rem; }
+        button { background-color: #007bff; color: white; padding: 1rem; border: none; border-radius: 4px; font-size: 1.1rem; cursor: pointer; transition: background-color 0.3s; margin-top: 1rem; }
+        button:hover { background-color: #0056b3; }
+        #result-container { margin-top: 2rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Panel de Pruebas para Suno API Custom</h1>
+        
+        <div class="status-box">
+            <div class="status-header">1. Verificación de Conexión</div>
+            <div class="status-content" id="status-container">
+                <p>Realizando verificación...</p>
+            </div>
+        </div>
+
+        <div id="generation-forms" class="status-box" style="margin-top: 2rem;">
+            <div class="status-header">Prueba de Generación Custom</div>
+            <div class="status-content">
+                <p>Usa este formulario para probar la generación de una canción con la API custom.</p>
+                <form id="test-form">
+                    <label for="tags">Estilo Musical / Descripción:</label>
+                    <input type="text" name="tags" id="tags" required placeholder="Ej: upbeat, electronic, pop">
+
+                    <label for="prompt">Letra de la Canción (Prompt):</label>
+                    <textarea name="prompt" id="prompt" placeholder="Dejar vacío para generar un instrumental"></textarea>
+                    
+                    <label for="title">Título de la canción:</label>
+                    <input type="text" name="title" id="title" placeholder="Ej: Code Creations">
+
+                    <label for="vocal_gender">G&eacute;nero de la Voz:</label>
+                    <select name="vocal_gender" id="vocal_gender" style="margin-bottom: 1rem; width: 100%; padding: 0.8rem; border: 1px solid #ddd; border-radius: 4px; font-size: 1rem; background-color: white;">
+                        <option value="f">Femenina</option>
+                        <option value="m">Masculina</option>
+                    </select>
+
+                    <button type="submit">Generar Canción de Prueba</button>
+                </form>
+            </div>
+        </div>
+
+        <div id="result-container" class="status-box" style="margin-top: 2rem; display: none;">
+            <div class="status-header">Resultado de la Generación</div>
+            <div class="status-content" id="result-content"></div>
+        </div>
+    </div>
+
+    <script>
+        window.onload = () => {
+            const statusContainer = document.getElementById('status-container');
+            fetch('/api/suno-custom-check')
+                .then(response => response.json())
+                .then(data => {
+                    statusContainer.innerHTML = ''; // Limpiar
+                    if (data.success) {
+                        const successDiv = document.createElement('div');
+                        successDiv.className = 'status-item success';
+                        successDiv.innerHTML = `<strong>¡Conexión exitosa!</strong><br>${data.message}`;
+                        statusContainer.appendChild(successDiv);
+                    } else {
+                        const errorDiv = document.createElement('div');
+                        errorDiv.className = 'status-item error';
+                        errorDiv.innerHTML = `<strong>Error de Conexión:</strong> ${data.error}`;
+                        statusContainer.appendChild(errorDiv);
+                    }
+                })
+                .catch(err => {
+                    statusContainer.innerHTML = '';
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'status-item error';
+                    errorDiv.innerHTML = `<strong>Error de Red:</strong> No se pudo conectar con el servidor.`;
+                    statusContainer.appendChild(errorDiv);
+                });
+        };
+
+        document.getElementById('test-form').addEventListener('submit', function(event) {
+            event.preventDefault();
+
+            const tags = document.getElementById('tags').value;
+            const prompt = document.getElementById('prompt').value;
+            const title = document.getElementById('title').value;
+            const vocal_gender = document.getElementById('vocal_gender').value;
+
+            const button = this.querySelector('button');
+            button.disabled = true;
+            button.textContent = 'Generando...';
+
+            const resultContainer = document.getElementById('result-container');
+            const resultContent = document.getElementById('result-content');
+            resultContainer.style.display = 'none';
+
+            const payload = {
+                tags,
+                prompt,
+                title,
+                vocal_gender
+            };
+
+            fetch('/api/test-suno-custom-generate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json())
+            .then(data => {
+                resultContainer.style.display = 'block';
+                resultContent.innerHTML = '';
+                if (data.error) {
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'status-item error';
+                    errorDiv.innerHTML = `<strong>Error:</strong> ${data.error}`;
+                    resultContent.appendChild(errorDiv);
+                } else {
+                    const successDiv = document.createElement('div');
+                    successDiv.className = 'status-item success';
+                    let songsHtml = '<strong>¡Generación completada!</strong>';
+                    data.forEach(song => {
+                        songsHtml += `<br><br><strong>Título:</strong> ${song.title}<br><strong>Audio:</strong> <a href="${song.audio_url}" target="_blank">Escuchar</a>`;
+                    });
+                    successDiv.innerHTML = songsHtml;
+                    resultContent.appendChild(successDiv);
+                }
+            })
+            .catch(error => {
+                resultContainer.style.display = 'block';
+                resultContent.innerHTML = '';
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'status-item error';
+                errorDiv.innerHTML = `<strong>Error de Red:</strong> ${error}`;
+                resultContent.appendChild(errorDiv);
+            })
+            .finally(() => {
+                button.disabled = false;
+                button.textContent = 'Generar Canción de Prueba';
+            });
+        });
+    </script>
+</body>
+</html>
