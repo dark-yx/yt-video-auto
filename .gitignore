@@ -10,5 +10,5 @@ songs/*
 # Archivos de configuración local
 .env
 
-
+# Archivos de control
 GEMINI.md
