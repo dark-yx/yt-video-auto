@@ -86,6 +86,60 @@ El componente más innovador de este proyecto es el cliente de API personalizado
 *   **Generación Inteligente de Instrumentales**: Si se inicia una generación de canción pero se omite la letra, el sistema lo detecta automáticamente y le pide a Suno que genere una pista instrumental.
 *   **Organización por Proyectos**: Todas las canciones generadas a través de la API se guardan automáticamente en un ID de proyecto predefinido en la cuenta de Suno, facilitando la organización.
 
+#### Flujo de Autenticación y Payload de Generación
+
+Para asegurar una interacción exitosa con la API de Suno, es crucial seguir el flujo de autenticación correcto y estructurar el payload de la solicitud de generación de la manera que la API espera. Estos detalles se han descubierto analizando las solicitudes de la aplicación web de Suno y pueden cambiar en el futuro.
+
+**Flujo de Autenticación en 2 Pasos:**
+
+1.  **Obtener Token JWT de Clerk**:
+    *   Se realiza una solicitud `GET` al endpoint de Clerk: `https://clerk.suno.com/v1/client?__clerk_api_version=...`
+    *   Esta solicitud utiliza la `SUNO_COOKIE` para identificar al usuario.
+    *   La respuesta contiene un token JWT (`last_active_token.jwt`) que se usará como `Bearer Token` en las siguientes solicitudes.
+
+2.  **Obtener `session_id` de la API de Suno**:
+    *   Con el token JWT en la cabecera `Authorization`, se realiza una solicitud `GET` al endpoint: `https://studio-api.prod.suno.com/api/user/get_user_session_id/`.
+    *   La respuesta es un objeto JSON que contiene el `session_id`.
+
+**Estructura del Payload para Generación (`/api/generate/v2-web/`)**
+
+La solicitud `POST` para generar una canción debe contener un payload JSON con una estructura específica. A continuación se detallan los campos clave:
+
+```json
+{
+    "project_id": "ID_DEL_PROYECTO",
+    "generation_type": "TEXT",
+    "mv": "chirp-crow",
+    "prompt": "Letra completa de la canción...",
+    "tags": "Estilo musical, descripción...",
+    "title": "Título de la canción",
+    "make_instrumental": false,
+    "transaction_uuid": "UUID_ALEATORIO_AQUÍ",
+    "token": null,
+    "metadata": {
+        "create_mode": "custom",
+        "stream": true,
+        "priority": 10,
+        "control_sliders": {
+            "style_weight": 0.5,
+            "weirdness_constraint": 0.5
+        },
+        "web_client_pathname": "/create",
+        "is_max_mode": false,
+        "is_mumble": false,
+        "create_session_token": "OTRO_UUID_ALEATORIO_AQUÍ",
+        "disable_volume_normalization": false,
+        "vocal_gender": "female"
+    }
+}
+```
+
+**Puntos Clave a Recordar:**
+
+*   **`transaction_uuid` y `create_session_token`**: Deben ser UUIDs v4 únicos generados para cada nueva solicitud.
+*   **`token`**: Este campo debe estar presente, aunque su valor puede ser `null`.
+*   **`vocal_gender`**: Este campo va anidado dentro del objeto `metadata`.
+
 ## Stack Tecnológico
 
 *   **Backend**: Python, Flask
