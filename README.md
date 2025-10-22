@@ -105,9 +105,8 @@ El componente más innovador de este proyecto es el cliente de API personalizado
 ├── app.py                  # Servidor Flask: define las rutas de la API y la interfaz de usuario.
 ├── tasks.py                # Define las tareas de Celery que se ejecutan en segundo plano.
 ├── requirements.txt        # Lista de dependencias de Python.
-├── .env-example            # Ejemplo de las variables de entorno necesarias.
+├── .env                    # Variables de entorno necesarias.
 ├── .gitignore              # Archivos y carpetas ignorados por Git.
-├── GEMINI.md               # Archivo de configuración para Gemini.
 ├── README.md               # Esta documentación.
 ├── clips/                  # Carpeta para los videoclips de fondo.
 ├── output/                 # Carpeta donde se guarda el video final renderizado.
