@@ -15,7 +15,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from celery import Celery, Task
-from src.main_orchestrator import run_video_workflow
+from src.main_orchestrator import run_video_workflow, resume_video_workflow
 
 # --- Configuración de Logging ---
 # Esto nos ayuda a ver los errores de Celery de forma más clara.
@@ -72,6 +72,34 @@ def create_video_task(self, user_prompt, song_style, num_female_songs, num_male_
         # Si algo sale mal, actualizamos el estado a FAILURE.
         self.update_state(state='FAILURE', meta={'details': str(e)})
         # Esto es útil para manejar excepciones de forma explícita.
+        return {'state': 'FAILURE', 'details': str(e)}
+
+
+@celery_app.task(bind=True)
+def resume_video_workflow_task(self, is_instrumental, with_subtitles):
+    """
+    Tarea de Celery para reanudar el proceso de creación de video.
+    """
+    try:
+        self.update_state(state='STARTED', meta={'details': 'Reanudando el proceso...'})
+        
+        initial_state = {
+            "is_instrumental": is_instrumental,
+            "with_subtitles": with_subtitles,
+            "task_instance": self
+        }
+
+        final_result = resume_video_workflow(initial_state)
+
+        return {
+            'state': 'SUCCESS',
+            'details': '¡Proceso de reanudación completado!',
+            'result': final_result
+        }
+
+    except Exception as e:
+        logger.error(f"La tarea de reanudación ha fallado: {e}", exc_info=True)
+        self.update_state(state='FAILURE', meta={'details': str(e)})
         return {'state': 'FAILURE', 'details': str(e)}
 
 

@@ -17,6 +17,9 @@ if not SUNO_COOKIE:
 CLIPS_DIR = "clips"
 SONGS_DIR = "songs"
 OUTPUT_DIR = "output"
+METADATA_DIR = "metadata"
+LYRICS_DIR = "lyrics"
+PUBLICATION_REPORTS_DIR = "publication_reports"
 
 # Asegurarse de que el path del video de salida sea único para evitar sobreescrituras
 VIDEO_OUTPUT_FILENAME = "final_video.mp4" # Se puede hacer más dinámico si es necesario

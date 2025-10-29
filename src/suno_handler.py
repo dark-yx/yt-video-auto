@@ -4,7 +4,7 @@ from src.suno_api import SunoApiClient
 from src.config import SONGS_DIR
 from celery import Task
 
-def create_and_download_song(lyrics: str, song_style: str, song_title: str, vocal_gender: str = 'f', task_instance: Task = None) -> list[str]:
+def create_and_download_song(lyrics: str, song_style: str, song_title: str, vocal_gender: str = 'f', is_instrumental: bool = False, task_instance: Task = None) -> list[str]:
     """
     Generates two songs with the new SunoApiClient, reports progress, and downloads them.
     Returns a list with the file paths of the downloaded songs.
@@ -19,15 +19,12 @@ def create_and_download_song(lyrics: str, song_style: str, song_title: str, voca
 
     try:
         client = SunoApiClient()
-        
-        # Determine if an instrumental is needed based on the lyrics
-        make_instrumental = not bool(lyrics and lyrics.strip())
 
         generation_response = client.generate(
             tags=song_style,
             title=song_title,
             prompt=lyrics,
-            make_instrumental=make_instrumental,
+            make_instrumental=is_instrumental,
             vocal_gender=vocal_gender
         )
 
@@ -51,8 +48,7 @@ def create_and_download_song(lyrics: str, song_style: str, song_title: str, voca
             print(f"Descargando canción '{song['title']}' como '{output_filename}'...")
             
             file_path = client.download_song(
-                song_id=song['id'], 
-                song_title=song['title'],
+                song=song,
                 output_filename=output_filename
             )
             song_paths.append(file_path)

@@ -14,10 +14,11 @@ El siguiente diagrama de Mermaid ilustra el flujo de trabajo completo del sistem
 graph TD
     subgraph "Interfaz de Usuario"
         A[Usuario] -->|1. Envía formulario con prompt, estilo y género vocal| B(Frontend - Flask UI);
+        B -->|También puede iniciar desde /resume| B;
     end
 
     subgraph "Backend y Tareas Asíncronas"
-        B -->|2. Llama a create_video_task| C(Backend - Flask API);
+        B -->|2. Llama a create_video_task o resume_video_workflow_task| C(Backend - Flask API);
         C -->|3. Encola la tarea en Redis| D[Cola de Tareas - Redis];
         E[Worker - Celery] -->|4. Toma la tarea de Redis| D;
     end
@@ -25,7 +26,7 @@ graph TD
     subgraph "Orquestación y Generación de Contenido"
         E -->|5. Ejecuta el orquestador| F(Orquestador - LangGraph);
 
-        F -->|Paso 1| G[a. Generar Letras con GPT-4o-mini];
+        F -->|Paso 1| G[a. Generar o Parsear Letras con GPT-4o-mini o utils.py];
         G -->|Paso 2| H[b. Crear Canciones con Cliente Suno];
         H -->|Paso 3| I[c. Ensamblar Video con MoviePy];
         I -->|Paso 4| J[d. Generar Metadatos con GPT-4o-mini];
@@ -37,10 +38,8 @@ graph TD
         L -->|POST /api/generate/v2-web/| M[API Interna de Suno];
         M -->|Responde con IDs de canciones| L;
         L -->|"GET /api/feed/v2?ids=..."| M;
-        M -->|Responde con estado de canciones| L;
-        L -->|"POST /api/billing/clips/{id}/download/"| M;
-        M -->|Responde con URL de descarga| L;
-        L -->|Descarga el archivo .mp3| H;
+        M -->|Responde con estado y audio_url| L;
+        L -->|Descarga MP3 desde audio_url| H;
     end
 
     subgraph "Monitorización y Resultado Final"
@@ -53,7 +52,7 @@ graph TD
 
 ### Componentes Principales
 
-1.  **Frontend (Flask Web UI)**: Una interfaz de usuario simple creada con Flask y HTML/JavaScript que permite al usuario introducir un tema para la canción, un estilo musical, y especificar cuántas canciones con **voz femenina** y **voz masculina** desea crear.
+1.  **Frontend (Flask Web UI)**: Una interfaz de usuario simple creada con Flask y HTML/JavaScript. Permite al usuario tanto iniciar un nuevo video desde cero como reanudar un trabajo anterior a través de la ruta `/resume`.
 
 2.  **Backend (Flask API)**: El servidor Flask (`app.py`) que recibe las peticiones del usuario, las valida y las delega a un sistema de tareas en segundo plano a través de Celery. También proporciona endpoints para monitorizar el estado de las tareas.
 
@@ -63,6 +62,7 @@ graph TD
 
 5.  **Módulos de IA y Clientes de API**:
     *   **Generador de Letras (`src/lyric_generator.py`)**: Utiliza el modelo `gpt-4o-mini` de OpenAI para crear letras de canciones basadas en el prompt y estilo del usuario.
+    *   **Parser de Letras (`src/utils.py`)**: Un módulo clave que contiene un "agente" de parseo inteligente. Su función es leer los archivos de letras `.txt` y extraer de forma robusta el título, el prompt (letra), las etiquetas y el género, para enviarlos correctamente a la API de Suno.
     *   **Compositor Musical (`src/suno_handler.py` y `src/suno_api.py`)**: Interactúa directamente con la API interna de Suno a través de un **cliente personalizado (`SunoApiClient`)**. Este es el componente clave que hemos desarrollado y que permite las funcionalidades avanzadas de generación musical.
     *   **Ensamblador de Video (`src/video_assembler.py`)**: Utiliza la librería `moviepy` para combinar las canciones generadas y sus letras (como subtítulos) en un archivo de video final.
     *   **Generador de Metadatos (`src/metadata_generator.py`)**: Crea títulos, descripciones y etiquetas optimizadas para YouTube utilizando `gpt-4o-mini`.
@@ -75,9 +75,9 @@ El componente más innovador de este proyecto es el cliente de API personalizado
 **Funcionamiento del Cliente:**
 
 1.  **Autenticación**: El cliente se autentica obteniendo un token JWT de Clerk, el servicio de autenticación de Suno. Para ello, utiliza la cookie de sesión del usuario (`SUNO_COOKIE`) que se configura en el archivo `.env`.
-2.  **Generación de Canciones**: El cliente envía una solicitud POST al endpoint `/api/generate/v2-web/` de la API de Suno. En esta solicitud se especifican todos los parámetros de la canción, como el prompt (letra), el título, el estilo (tags), el modelo a utilizar (`chirp-crow` para v5), y el género vocal (masculino o femenino).
+2.  **Generación de Canciones**: El cliente envía una solicitud POST al endpoint `/api/generate/v2-web/` de la API de Suno. En esta solicitud se especifican todos los parámetros de la canción, como el prompt (letra), el título, el estilo (tags), el modelo a utilizar (`chirp-crow` para v5), y el género vocal (traducido a 'f' o 'm').
 3.  **Sondeo de Estado (Polling)**: La API de Suno no genera las canciones de forma síncrona. En su lugar, devuelve una lista de IDs de las canciones que se están generando. El cliente sondea el endpoint `/api/feed/v2` cada 10 segundos, pasando los IDs de las canciones, hasta que el estado de todas las canciones sea `complete`.
-4.  **Descarga de Canciones**: Una vez que las canciones están completas, el cliente obtiene la URL de descarga de cada una enviando una solicitud POST al endpoint `/api/billing/clips/{id}/download/`. Finalmente, descarga el archivo de audio en formato MP3 y lo guarda en la carpeta `songs`.
+4.  **Descarga de Canciones (Método Eficiente)**: Una vez que el sondeo confirma que una canción está completa, la respuesta de la API ya incluye una `audio_url` directa al archivo MP3. El cliente utiliza esta URL para descargar la canción directamente usando un *stream* de `requests`, lo que es más eficiente en memoria. Este método elimina una llamada extra a la API que se hacía anteriormente, solucionando errores de "URL de descarga no encontrada".
 
 **Funcionalidades Avanzadas Gracias al Cliente:**
 
@@ -150,7 +150,7 @@ La solicitud `POST` para generar una canción debe contener un payload JSON con 
     *   Generación Musical: Suno AI (vía API interna con cliente propio)
     *   Plataforma de Video: YouTube Data API v3
 *   **Frontend**: HTML, JavaScript
-*   **Librerías Clave**: `flask`, `celery`, `redis`, `langgraph`, `openai`, `moviepy`, `google-api-python-client`.
+*   **Librerías Clave**: `flask`, `celery`, `redis`, `langgraph`, `openai`, `moviepy`, `google-api-python-client`, `requests`.
 
 ## Estructura de Archivos y Carpetas
 
@@ -172,10 +172,12 @@ La solicitud `POST` para generar una canción debe contener un payload JSON con 
 │   ├── metadata_generator.py# Módulo para generar metadatos de YouTube con OpenAI.
 │   ├── suno_api.py         # Cliente de bajo nivel para la API interna de Suno.
 │   ├── suno_handler.py     # Manejador que utiliza SunoApiClient para generar y descargar canciones.
+│   ├── utils.py            # Funciones de utilidad, como el parser de archivos de letras.
 │   ├── video_assembler.py  # Módulo para ensamblar el video final con MoviePy.
 │   └── youtube_uploader.py # Módulo para subir el video a YouTube.
 ├── templates/              # Plantillas HTML para la interfaz de usuario de Flask.
 │   ├── index.html          # Formulario principal para iniciar la creación del video.
+│   ├── resume.html         # Página para reanudar un flujo de trabajo.
 │   ├── status.html         # Página para ver el progreso de la tarea de creación.
 │   └── test.html           # Página de prueba para el cliente de Suno.
 └── venv/                   # Entorno virtual de Python.
