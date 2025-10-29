@@ -1,9 +1,13 @@
 
 import os
 from flask import Flask, render_template, request, redirect, url_for, jsonify, send_from_directory
-from tasks import create_video_task, celery_app
+from tasks import create_video_task, celery_app, resume_video_workflow_task
 from celery.result import AsyncResult
 from src.suno_api import SunoApiClient
+from src.config import (
+    LYRICS_DIR, SONGS_DIR, CLIPS_DIR, OUTPUT_DIR, METADATA_DIR, 
+    PUBLICATION_REPORTS_DIR, VIDEO_OUTPUT_PATH
+)
 
 # --- Configuración de la aplicación Flask ---
 app = Flask(__name__)
@@ -35,6 +39,36 @@ def suno_test_page():
 def status(job_id):
     return render_template('status.html', job_id=job_id)
 
+
+@app.route('/resume', methods=['GET', 'POST'])
+def resume():
+    if request.method == 'POST':
+        is_instrumental = 'instrumental' in request.form
+        with_subtitles = 'subtitles' in request.form
+        task = resume_video_workflow_task.delay(
+            is_instrumental=is_instrumental,
+            with_subtitles=with_subtitles
+        )
+        return redirect(url_for('status', job_id=task.id))
+
+    # Lógica para GET
+    def get_file_count(directory, extensions):
+        if not os.path.exists(directory):
+            return 0
+        return len([f for f in os.listdir(directory) if not f.startswith('.') and any(f.endswith(ext) for ext in extensions)])
+
+    status_data = {
+        'lyrics': {'count': get_file_count(LYRICS_DIR, ['.txt'])},
+        'songs': {'count': get_file_count(SONGS_DIR, ['.mp3'])},
+        'clips': {'count': get_file_count(CLIPS_DIR, ['.mp4', '.mov'])},
+        'metadata': {'count': get_file_count(METADATA_DIR, ['.txt'])},
+        'published': {'count': get_file_count(PUBLICATION_REPORTS_DIR, ['.json'])},
+        'final_video': {'exists': os.path.exists(VIDEO_OUTPUT_PATH)}
+    }
+
+    return render_template('resume.html', status=status_data)
+
+
 # --- Rutas de API --- #
 
 @app.route('/api/suno-custom-check')
@@ -49,29 +83,42 @@ def suno_custom_check_api():
 
 @app.route('/api/status/<job_id>')
 def job_status_api(job_id):
-    task = celery_app.AsyncResult(job_id)
-    
-    if task.state == 'PENDING':
+    try:
+        task = celery_app.AsyncResult(job_id)
+
+        if task.failed():
+            response = {
+                'state': 'FAILURE',
+                'progress': '0%',
+                'details': str(task.info),
+            }
+        elif task.state == 'PENDING':
+            response = {
+                'state': task.state,
+                'progress': '0%',
+                'details': 'La tarea está en la cola, esperando para empezar...'
+            }
+        elif task.state == 'SUCCESS':
+            response = {
+                'state': task.state,
+                'progress': task.info.get('progress', '100%'),
+                'details': task.info.get('details', 'Completado'),
+                'result': task.info
+            }
+        else:  # Otros estados como STARTED o PROGRESS
+            response = {
+                'state': task.state,
+                'progress': task.info.get('progress', '0%'),
+                'details': task.info.get('details', '')
+            }
+    except Exception as e:
+        # Si ocurre cualquier error al consultar el estado (como el KeyError),
+        # devolvemos una respuesta de fallo genérica para no romper la UI.
+        app.logger.error(f"Error al obtener el estado de la tarea {job_id}: {e}")
         response = {
-            'state': task.state,
+            'state': 'FAILURE',
             'progress': '0%',
-            'details': 'La tarea está en la cola, esperando para empezar...'
-        }
-    elif task.state != 'FAILURE':
-        response = {
-            'state': task.state,
-            'progress': task.info.get('progress', '0%'),
-            'details': task.info.get('details', '')
-        }
-        # Si la tarea ha terminado con éxito (SUCCESS), el resultado estará en task.info
-        if task.state == 'SUCCESS':
-             response['result'] = task.info
-    else:
-        # El estado es FAILURE
-        response = {
-            'state': task.state,
-            'progress': '0%',
-            'details': str(task.info),  # task.info contiene la excepción
+            'details': 'Error interno al obtener el estado de la tarea. Revisa los logs del worker.',
         }
 
     return jsonify(response)

@@ -72,11 +72,11 @@ class SunoApiClient:
         response.raise_for_status()
         return response.json()
 
-    def generate(self, tags, title, prompt, make_instrumental, vocal_gender='f', mv="chirp-crow"):
+    def generate(self, tags, title, prompt, make_instrumental, vocal_gender='female', mv="chirp-crow"):
         if not self.session_id:
             self.initialize_session()
         
-        project_id = "3416bdd1-11da-4e80-b781-7c689f2260e1"
+        project_id = "f84fd8f1-51f5-4a98-b272-b3d4ed52c9d8"
 
         payload = {
             "project_id": project_id,
@@ -105,7 +105,11 @@ class SunoApiClient:
         }
 
         if not make_instrumental:
-            payload["metadata"]["vocal_gender"] = vocal_gender
+            # Translate 'female'/'male' to 'f'/'m' for the API
+            suno_gender = 'f'  # Default to female
+            if str(vocal_gender).lower() == 'male':
+                suno_gender = 'm'
+            payload["metadata"]["vocal_gender"] = suno_gender
         
         response = self.session.post(f"{self.api_base_url}/generate/v2-web/", json=payload)
         
@@ -135,18 +139,21 @@ class SunoApiClient:
             print("Canción no lista, reintentando en 10 segundos...")
             time.sleep(10)
 
-    def download_song(self, song_id, song_title, output_filename=None):
+    def download_song(self, song, output_filename=None):
+        """
+        Downloads a song using the direct audio_url from the song object,
+        writing it to a file as a stream.
+        """
         if not self.session_id:
             self.initialize_session()
-        
-        response = self.session.post(f"{self.api_base_url}/billing/clips/{song_id}/download/")
-        response.raise_for_status()
-        download_url = response.json().get("url")
 
-        if not download_url:
-            raise Exception("No se pudo obtener la URL de descarga.")
+        audio_url = song.get('audio_url')
+        song_title = song.get('title', 'Untitled Song')
 
-        audio_response = requests.get(download_url, stream=True)
+        if not audio_url:
+            raise Exception(f"El objeto de la canción para '{song_title}' no contenía una 'audio_url'.")
+
+        audio_response = self.session.get(audio_url, stream=True)
         audio_response.raise_for_status()
 
         if output_filename:
@@ -155,6 +162,7 @@ class SunoApiClient:
             safe_title = re.sub(r'[\\/*?"<>|]', "", song_title)
             file_path = os.path.join("songs", f"{safe_title}.mp3")
 
+        os.makedirs("songs", exist_ok=True)
         with open(file_path, 'wb') as f:
             for chunk in audio_response.iter_content(chunk_size=8192):
                 f.write(chunk)

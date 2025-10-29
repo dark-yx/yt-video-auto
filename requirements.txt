@@ -22,3 +22,5 @@ oauth2client
 
 # Suno AI API (Unofficial)
 SunoAI
+requests
+
