@@ -10,8 +10,9 @@ from src.config import (
     LYRICS_DIR, SONGS_DIR, CLIPS_DIR, OUTPUT_DIR, 
     METADATA_DIR, PUBLICATION_REPORTS_DIR, VIDEO_OUTPUT_PATH
 )
-from src.lyric_generator import generate_lyrics
+from src.lyric_generator import generate_lyrics_for_song, generate_instrumental_prompt_for_song
 from src.suno_handler import create_and_download_song
+from src.suno_api import SunoApiClient
 from src.video_assembler import assemble_video
 from src.metadata_generator import generate_youtube_metadata
 from src.youtube_uploader import upload_video_to_youtube
@@ -37,6 +38,7 @@ class AgentState(TypedDict):
     final_video_path: str
     youtube_url: str
     task_instance: Task
+    suno_client: SunoApiClient
     resume_from_node: str
 
 # --- Funciones de ayuda ---
@@ -56,19 +58,60 @@ TOTAL_STEPS = 6 # Ajustado a 6 pasos incluyendo la creación del informe
 
 def node_generate_lyrics(state: AgentState) -> Dict:
     task = state["task_instance"]
-    update_progress(task, 1, TOTAL_STEPS, "Generando letras...")
+    update_progress(task, 1, TOTAL_STEPS, "Iniciando generación de letras...")
 
-    # Determinar el número total de canciones a generar
-    total_songs = state.get("num_female_songs", 0) + state.get("num_male_songs", 0)
-    
-    # Generar las letras para cada canción
-    lyrics_list = generate_lyrics(
-        user_prompt=state["user_prompt"],
-        song_style=state["song_style"],
-        num_songs=total_songs,
-        language=state.get("language", "spanish")
-    )
-    
+    lyrics_list = []
+    os.makedirs(LYRICS_DIR, exist_ok=True)
+
+    is_instrumental = state.get("is_instrumental", False)
+    num_female = state.get("num_female_songs", 0)
+    num_male = state.get("num_male_songs", 0)
+
+    if is_instrumental:
+        total_songs = state.get("num_instrumental_songs", 1)
+    else:
+        total_songs = num_female + num_male
+
+    for i in range(total_songs):
+        song_index = i + 1
+        update_progress(task, 1, TOTAL_STEPS, f"Generando texto para canción {song_index}/{total_songs}...")
+
+        if is_instrumental:
+            content = generate_instrumental_prompt_for_song(
+                prompt=state["user_prompt"],
+                song_style=state["song_style"],
+                language=state.get("language", "spanish"),
+                song_index=song_index,
+                total_songs=total_songs
+            )
+        else:
+            # Determinar el género para la canción actual
+            gender = "Femenino" if i < num_female else "Masculino"
+            
+            content = generate_lyrics_for_song(
+                prompt=state["user_prompt"],
+                song_style=state["song_style"],
+                language=state.get("language", "spanish"),
+                gender=gender,
+                song_index=song_index,
+                total_songs=total_songs
+            )
+        
+        lyrics_list.append(content)
+
+        # Guardar el archivo .txt inmediatamente
+        try:
+            parsed_data = parse_lyrics_file(content)
+            title = parsed_data.get('title', f'song_{song_index}')
+            safe_title = "".join(c for c in title if c.isalnum() or c in " _-").rstrip()
+            # Añadir el song_index al nombre del archivo para organización y evitar sobrescrituras
+            filepath = os.path.join(LYRICS_DIR, f"{song_index}_{safe_title}.txt")
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print(f"Texto de canción guardado en: {filepath}")
+        except Exception as e:
+            print(f"Error al guardar el archivo de letras para la canción {song_index}: {e}")
+
     return {"lyrics_list": lyrics_list}
 
 def node_create_songs(state: AgentState) -> Dict:
@@ -90,6 +133,7 @@ def node_create_songs(state: AgentState) -> Dict:
 
         # Create and download the song(s) using the parsed data
         new_song_paths = create_and_download_song(
+            client=state["suno_client"],
             lyrics=parsed_data['prompt'],
             song_style=tags,
             song_title=parsed_data['title'],

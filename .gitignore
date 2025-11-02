@@ -2,12 +2,13 @@
 __pycache__/
 *.pyc
 
-
+client_secret.json
 
 # Contenido de medios generados
 *.txt
 *.mp4
 *.mp3
+*.m4a
 
 # Archivos DB_Store
 *.DS_Store

@@ -26,14 +26,55 @@
             <label for="style">Estilo Musical:</label>
             <input type="text" name="style" id="style" required placeholder="Ej: Pop rock, acústico, cinematográfico">
 
-            <label for="num_female_songs">Canciones con Voz Femenina:</label>
-            <input type="number" name="num_female_songs" id="num_female_songs" min="0" max="25" value="1" required>
+            <div>
+                <input type="checkbox" name="is_instrumental" id="is_instrumental">
+                <label for="is_instrumental">Es Instrumental</label>
+            </div>
 
-            <label for="num_male_songs">Canciones con Voz Masculina:</label>
-            <input type="number" name="num_male_songs" id="num_male_songs" min="0" max="25" value="0" required>
+            <div id="language-container">
+                <label for="language">Idioma de la Letra:</label>
+                <select name="language" id="language">
+                    <option value="spanish" selected>Español</option>
+                    <option value="english">Inglés</option>
+                    <option value="french">Francés</option>
+                    <option value="portuguese">Portugués</option>
+                </select>
+            </div>
+
+            <div id="vocal-songs-container">
+                <label for="num_female_songs">Canciones con Voz Femenina:</label>
+                <input type="number" name="num_female_songs" id="num_female_songs" min="0" max="25" value="1" required>
+
+                <label for="num_male_songs">Canciones con Voz Masculina:</label>
+                <input type="number" name="num_male_songs" id="num_male_songs" min="0" max="25" value="0" required>
+            </div>
+
+            <div id="instrumental-songs-container" style="display: none;">
+                <label for="num_instrumental_songs">Número de Canciones Instrumentales:</label>
+                <input type="number" name="num_instrumental_songs" id="num_instrumental_songs" min="1" max="25" value="1">
+            </div>
+
+            <div>
+                <input type="checkbox" name="with_subtitles" id="with_subtitles" checked>
+                <label for="with_subtitles">Añadir Subtítulos al Video</label>
+            </div>
 
             <button type="submit">¡Crear Video!</button>
         </form>
     </div>
+
+    <script>
+        document.getElementById('is_instrumental').addEventListener('change', function() {
+            const isInstrumental = this.checked;
+            document.getElementById('language-container').style.display = isInstrumental ? 'none' : 'block';
+            document.getElementById('vocal-songs-container').style.display = isInstrumental ? 'none' : 'block';
+            document.getElementById('instrumental-songs-container').style.display = isInstrumental ? 'block' : 'none';
+
+            // Adjust required attributes
+            document.getElementById('num_female_songs').required = !isInstrumental;
+            document.getElementById('num_male_songs').required = !isInstrumental;
+            document.getElementById('num_instrumental_songs').required = isInstrumental;
+        });
+    </script>
 </body>
 </html>

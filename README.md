@@ -8,8 +8,6 @@ El sistema está diseñado para ser robusto y escalable, separando la interfaz d
 
 ### Diagrama de Arquitectura
 
-El siguiente diagrama de Mermaid ilustra el flujo de trabajo completo del sistema, desde que el usuario envía el formulario hasta que el video es subido a YouTube.
-
 ```mermaid
 graph TD
     subgraph "Interfaz de Usuario"
@@ -28,7 +26,7 @@ graph TD
 
         F -->|Paso 1| G[a. Generar o Parsear Letras con GPT-4o-mini o utils.py];
         G -->|Paso 2| H[b. Crear Canciones con Cliente Suno];
-        H -->|Paso 3| I[c. Ensamblar Video con MoviePy];
+        H -->|Paso 3| I[c. Ensamblar Video con MoviePy 2.0+];
         I -->|Paso 4| J[d. Generar Metadatos con GPT-4o-mini];
         J -->|Paso 5| K[e. Subir a YouTube con API v3];
     end
@@ -64,7 +62,11 @@ graph TD
     *   **Generador de Letras (`src/lyric_generator.py`)**: Utiliza el modelo `gpt-4o-mini` de OpenAI para crear letras de canciones basadas en el prompt y estilo del usuario.
     *   **Parser de Letras (`src/utils.py`)**: Un módulo clave que contiene un "agente" de parseo inteligente. Su función es leer los archivos de letras `.txt` y extraer de forma robusta el título, el prompt (letra), las etiquetas y el género, para enviarlos correctamente a la API de Suno.
     *   **Compositor Musical (`src/suno_handler.py` y `src/suno_api.py`)**: Interactúa directamente con la API interna de Suno a través de un **cliente personalizado (`SunoApiClient`)**. Este es el componente clave que hemos desarrollado y que permite las funcionalidades avanzadas de generación musical.
-    *   **Ensamblador de Video (`src/video_assembler.py`)**: Utiliza la librería `moviepy` para combinar las canciones generadas y sus letras (como subtítulos) en un archivo de video final.
+    *   **Ensamblador de Video (`src/video_assembler.py`)**: **Módulo actualizado y robusto que utiliza `moviepy>=2.0`**. Se encarga de:
+        *   Eliminar el audio de los videoclips base para no interferir con la música.
+        *   Crear transiciones de fundido (crossfade) entre los clips para un acabado profesional.
+        *   Implementar un sistema de bucle manual y estable para que el video se repita hasta cubrir la duración total de la música, evitando bugs conocidos de `vfx.loop()`.
+        *   Detectar automáticamente fuentes del sistema (`Arial`, `Helvetica`, etc.) para renderizar los subtítulos de forma fiable en macOS, Linux y Windows.
     *   **Generador de Metadatos (`src/metadata_generator.py`)**: Crea títulos, descripciones y etiquetas optimizadas para YouTube utilizando `gpt-4o-mini`.
     *   **Cargador a YouTube (`src/youtube_uploader.py`)**: Sube el video final a una cuenta de YouTube especificada utilizando la API de YouTube Data v3.
 
@@ -149,6 +151,7 @@ La solicitud `POST` para generar una canción debe contener un payload JSON con 
     *   Generación de Lenguaje: OpenAI (`gpt-4o-mini`)
     *   Generación Musical: Suno AI (vía API interna con cliente propio)
     *   Plataforma de Video: YouTube Data API v3
+*   **Edición de Video**: **MoviePy (>=2.0)**
 *   **Frontend**: HTML, JavaScript
 *   **Librerías Clave**: `flask`, `celery`, `redis`, `langgraph`, `openai`, `moviepy`, `google-api-python-client`, `requests`.
 
@@ -187,7 +190,7 @@ La solicitud `POST` para generar una canción debe contener un payload JSON con 
 
 ### Prerrequisitos
 
-*   Python 3.8+
+*   Python 3.9+
 *   Redis Server corriendo localmente.
 *   Un archivo `.env` con las credenciales para `OPENAI_API_KEY` y `SUNO_COOKIE`.
 *   Un proyecto en Google Cloud con la API de YouTube Data v3 habilitada y un archivo `client_secrets.json`.
@@ -198,27 +201,56 @@ La solicitud `POST` para generar una canción debe contener un payload JSON con 
     ```bash
     git clone <URL_DEL_REPOSITORIO>
     cd yt-video-auto
-    python -m venv venv
+    python3 -m venv venv
     source venv/bin/activate
-    pip install -r requirements.txt
+    ```
+
+2.  **Instalar Dependencias (¡Importante: MoviePy!):**
+    *   Primero, asegúrate de tener la versión correcta de `moviepy`.
+    ```bash
+    # Desinstala cualquier versión antigua para evitar conflictos
+    pip3 uninstall moviepy -y
+
+    # Instala la versión 2.0 o superior
+    pip3 install "moviepy>=2.0"
+
+    # Instala el resto de las dependencias
+    pip3 install -r requirements.txt
+    ```
+
+3.  **Configurar Variables de Entorno:**
+    ```bash
     cp .env-example .env
     # Ahora edita el archivo .env con tus credenciales.
     ```
 
-2.  **Iniciar Servicios (en terminales separadas):**
+4.  **Iniciar Servicios (en terminales separadas):**
     ```bash
     # Terminal 1: Servidor Redis
     redis-server
 
     # Terminal 2: Worker de Celery
-    celery -A tasks.celery_app worker --loglevel=info
+    # La variable de entorno es necesaria en macOS para evitar problemas con fork
+    OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES celery -A tasks.celery_app worker --loglevel=info
 
     # Terminal 3: Aplicación Flask
     flask run --host=0.0.0.0 --port=8080
     ```
 
-3.  **Acceder y Usar:**
+5.  **Acceder y Usar:**
     *   Abre tu navegador en `http://localhost:8080`.
-    *   Rellena el tema de la canción, el estilo, y el número de canciones que deseas para cada género vocal.
-    *   Haz clic en "¡Crear Video!" y sigue el progreso en la página de estado.
-    *   Para la autenticación de YouTube, la primera vez que se suba un video, se te pedirá que sigas un flujo de autenticación en la terminal donde se está ejecutando el worker de Celery.
+    *   Rellena el formulario y haz clic en "¡Crear Video!".
+    *   Para la autenticación de YouTube, la primera vez se te pedirá que sigas un flujo de autenticación en la terminal donde se está ejecutando el worker de Celery.
+
+## Solución de Problemas Comunes
+
+*   **Problema:** Error `Invalid font` al generar subtítulos.
+    *   **Solución:** El script ahora detecta fuentes comunes del sistema. Si aun así falla, asegúrate de tener instaladas fuentes como `Arial` o `Liberation Sans` en tu sistema operativo.
+
+*   **Problema:** El video se queda en pantalla negra después de un tiempo.
+    *   **Causa:** Un bug conocido en la función `vfx.loop()` de `moviepy`.
+    *   **Solución:** Se ha implementado una función `loop_video_to_duration()` personalizada que evita este problema.
+
+*   **Problema:** Errores de `AttributeError` como `set_duration`, `set_position`, etc.
+    *   **Causa:** Estás usando una sintaxis de `moviepy` v1.x con una librería v2.0+.
+    *   **Solución:** El código ha sido actualizado para usar la nueva API: `.with_duration()`, `.with_position()`, `.with_start()`, `.with_audio()`, y `.with_effects()`.

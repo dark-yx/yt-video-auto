@@ -40,17 +40,34 @@
                     <label for="tags">Estilo Musical / Descripción:</label>
                     <input type="text" name="tags" id="tags" required placeholder="Ej: upbeat, electronic, pop">
 
+                    <div>
+                        <input type="checkbox" name="is_instrumental" id="is_instrumental">
+                        <label for="is_instrumental">Es Instrumental</label>
+                    </div>
+
+                    <div id="language-container">
+                        <label for="language">Idioma de la Letra:</label>
+                        <select name="language" id="language" style="margin-bottom: 1rem; width: 100%; padding: 0.8rem; border: 1px solid #ddd; border-radius: 4px; font-size: 1rem; background-color: white;">
+                            <option value="spanish" selected>Español</option>
+                            <option value="english">Inglés</option>
+                            <option value="french">Francés</option>
+                            <option value="portuguese">Portugués</option>
+                        </select>
+                    </div>
+
                     <label for="prompt">Letra de la Canción (Prompt):</label>
                     <textarea name="prompt" id="prompt" placeholder="Dejar vacío para generar un instrumental"></textarea>
                     
                     <label for="title">Título de la canción:</label>
                     <input type="text" name="title" id="title" placeholder="Ej: Code Creations">
 
-                    <label for="vocal_gender">G&eacute;nero de la Voz:</label>
-                    <select name="vocal_gender" id="vocal_gender" style="margin-bottom: 1rem; width: 100%; padding: 0.8rem; border: 1px solid #ddd; border-radius: 4px; font-size: 1rem; background-color: white;">
-                        <option value="f">Femenina</option>
-                        <option value="m">Masculina</option>
-                    </select>
+                    <div id="vocal-gender-container">
+                        <label for="vocal_gender">G&eacute;nero de la Voz:</label>
+                        <select name="vocal_gender" id="vocal_gender" style="margin-bottom: 1rem; width: 100%; padding: 0.8rem; border: 1px solid #ddd; border-radius: 4px; font-size: 1rem; background-color: white;">
+                            <option value="f">Femenina</option>
+                            <option value="m">Masculina</option>
+                        </select>
+                    </div>
 
                     <button type="submit">Generar Canción de Prueba</button>
                 </form>
@@ -64,6 +81,13 @@
     </div>
 
     <script>
+        document.getElementById('is_instrumental').addEventListener('change', function() {
+            const isInstrumental = this.checked;
+            document.getElementById('language-container').style.display = isInstrumental ? 'none' : 'block';
+            document.getElementById('vocal-gender-container').style.display = isInstrumental ? 'none' : 'block';
+            document.getElementById('prompt').placeholder = isInstrumental ? 'Generando instrumental, la letra será ignorada' : 'Dejar vacío para generar un instrumental';
+        });
+
         window.onload = () => {
             const statusContainer = document.getElementById('status-container');
             fetch('/api/suno-custom-check')

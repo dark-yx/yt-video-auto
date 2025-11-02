@@ -16,6 +16,7 @@ if project_root not in sys.path:
 
 from celery import Celery, Task
 from src.main_orchestrator import run_video_workflow, resume_video_workflow
+from src.suno_api import SunoApiClient
 
 # --- Configuración de Logging ---
 # Esto nos ayuda a ver los errores de Celery de forma más clara.
@@ -38,7 +39,7 @@ celery_app.conf.update(
 # --- Definición de la Tarea de Celery ---
 
 @celery_app.task(bind=True)
-def create_video_task(self, user_prompt, song_style, num_female_songs, num_male_songs):
+def create_video_task(self, user_prompt, song_style, is_instrumental, language, with_subtitles, num_female_songs, num_male_songs, num_instrumental_songs):
     """
     Esta es la tarea de Celery que se ejecuta en segundo plano.
     'bind=True' hace que la instancia de la tarea (self) esté disponible,
@@ -47,12 +48,20 @@ def create_video_task(self, user_prompt, song_style, num_female_songs, num_male_
     try:
         self.update_state(state='STARTED', meta={'details': 'Iniciando el proceso...'})
         
+        client = SunoApiClient()
+        client.initialize_session() # Pre-autenticar al inicio de la tarea
+
         initial_state = {
             "user_prompt": user_prompt,
             "song_style": song_style,
+            "is_instrumental": is_instrumental,
+            "language": language,
+            "with_subtitles": with_subtitles,
             "num_female_songs": num_female_songs,
             "num_male_songs": num_male_songs,
-            "task_instance": self  # Pasamos la instancia de la tarea al estado
+            "num_instrumental_songs": num_instrumental_songs,
+            "task_instance": self,  # Pasamos la instancia de la tarea al estado
+            "suno_client": client # Pasamos el cliente instanciado
         }
 
         # Llamamos a nuestra lógica principal del orquestador.
@@ -83,10 +92,14 @@ def resume_video_workflow_task(self, is_instrumental, with_subtitles):
     try:
         self.update_state(state='STARTED', meta={'details': 'Reanudando el proceso...'})
         
+        client = SunoApiClient()
+        client.initialize_session() # Pre-autenticar al inicio de la tarea
+
         initial_state = {
             "is_instrumental": is_instrumental,
             "with_subtitles": with_subtitles,
-            "task_instance": self
+            "task_instance": self,
+            "suno_client": client # Pasamos el cliente instanciado
         }
 
         final_result = resume_video_workflow(initial_state)
