@@ -4,7 +4,7 @@ from src.suno_api import SunoApiClient
 from src.config import SONGS_DIR
 from celery import Task
 
-def create_and_download_song(lyrics: str, song_style: str, song_title: str, vocal_gender: str = 'f', is_instrumental: bool = False, task_instance: Task = None) -> list[str]:
+def create_and_download_song(client: SunoApiClient, lyrics: str, song_style: str, song_title: str, vocal_gender: str = 'f', is_instrumental: bool = False, task_instance: Task = None) -> list[str]:
     """
     Generates two songs with the new SunoApiClient, reports progress, and downloads them.
     Returns a list with the file paths of the downloaded songs.
@@ -18,7 +18,7 @@ def create_and_download_song(lyrics: str, song_style: str, song_title: str, voca
         )
 
     try:
-        client = SunoApiClient()
+        # El cliente ahora se pasa como argumento, no se crea aquí.
 
         generation_response = client.generate(
             tags=song_style,

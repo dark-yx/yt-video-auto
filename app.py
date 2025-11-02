@@ -25,9 +25,30 @@ def index():
     if request.method == 'POST':
         user_prompt = request.form['prompt']
         song_style = request.form['style']
-        num_female_songs = int(request.form.get('num_female_songs', 0))
-        num_male_songs = int(request.form.get('num_male_songs', 0))
-        task = create_video_task.delay(user_prompt, song_style, num_female_songs, num_male_songs)
+        is_instrumental = 'is_instrumental' in request.form
+        language = request.form.get('language', 'spanish')
+        with_subtitles = 'with_subtitles' in request.form
+        
+        num_female_songs = 0
+        num_male_songs = 0
+        num_instrumental_songs = 0
+
+        if is_instrumental:
+            num_instrumental_songs = int(request.form.get('num_instrumental_songs', 1))
+        else:
+            num_female_songs = int(request.form.get('num_female_songs', 0))
+            num_male_songs = int(request.form.get('num_male_songs', 0))
+
+        task = create_video_task.delay(
+            user_prompt=user_prompt,
+            song_style=song_style,
+            is_instrumental=is_instrumental,
+            language=language,
+            with_subtitles=with_subtitles,
+            num_female_songs=num_female_songs,
+            num_male_songs=num_male_songs,
+            num_instrumental_songs=num_instrumental_songs
+        )
         return redirect(url_for('status', job_id=task.id))
     return render_template('index.html')
 
