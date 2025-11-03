@@ -39,7 +39,7 @@ def get_authenticated_service():
         class Args:
             auth_host_name = 'localhost'
             noauth_local_webserver = False
-            auth_host_port = [8080, 8090]
+            auth_host_port = [8000, 8090]
             logging_level = 'ERROR'
         
         print("\n--- INICIO DE AUTENTICACIÓN DE YOUTUBE ---")

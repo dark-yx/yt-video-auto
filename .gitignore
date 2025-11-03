@@ -2,13 +2,14 @@
 __pycache__/
 *.pyc
 
-client_secret.json
+client_secrets.json
 
 # Contenido de medios generados
 *.txt
 *.mp4
 *.mp3
 *.m4a
+*.m4v
 
 # Archivos DB_Store
 *.DS_Store
@@ -18,3 +19,5 @@ client_secret.json
 
 # Archivos de control
 GEMINI.md
+
+output/temp_ffmpeg

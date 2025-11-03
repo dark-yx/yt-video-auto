@@ -8,6 +8,14 @@ from src.config import (
     LYRICS_DIR, SONGS_DIR, CLIPS_DIR, OUTPUT_DIR, METADATA_DIR, 
     PUBLICATION_REPORTS_DIR, VIDEO_OUTPUT_PATH
 )
+import logging
+
+class HealthCheckFilter(logging.Filter):
+    def filter(self, record):
+        return record.getMessage().find('/v1/models') == -1
+
+logging.getLogger("werkzeug").addFilter(HealthCheckFilter())
+
 
 # --- Configuración de la aplicación Flask ---
 app = Flask(__name__)
@@ -193,5 +201,9 @@ def serve_song(filename):
     # Sirve las canciones generadas desde la carpeta 'songs'
     return send_from_directory(os.path.join(os.getcwd(), SONGS_FOLDER), filename, as_attachment=False)
 
+@app.route('/v1/models', methods=['GET'])
+def get_models():
+    return jsonify([])
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    app.run(host='0.0.0.0', port=8000, debug=True)

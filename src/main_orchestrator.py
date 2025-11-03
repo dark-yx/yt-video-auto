@@ -97,6 +97,11 @@ def node_generate_lyrics(state: AgentState) -> Dict:
                 total_songs=total_songs
             )
         
+        # Añadir el género al final del contenido de forma programática para asegurar consistencia
+        if not is_instrumental:
+            gender = "Femenino" if i < num_female else "Masculino"
+            content = content.strip() + f"\n\nGENERO: {gender}"
+
         lyrics_list.append(content)
 
         # Guardar el archivo .txt inmediatamente

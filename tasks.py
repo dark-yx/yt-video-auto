@@ -27,8 +27,8 @@ logger = logging.getLogger(__name__)
 # Definimos la aplicación Celery, apuntando a Redis como intermediario.
 # El 'main' es el nombre del módulo actual, es una convención de Celery.
 celery_app = Celery('tasks',
-                    broker='redis://localhost:6379/0',
-                    backend='redis://localhost:6379/0')
+                    broker='redis://localhost:6379/1',
+                    backend='redis://localhost:6379/1')
 
 # Opcional: Configuración adicional de Celery para mayor robustez
 celery_app.conf.update(

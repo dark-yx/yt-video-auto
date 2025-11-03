@@ -234,11 +234,11 @@ La solicitud `POST` para generar una canción debe contener un payload JSON con 
     OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES celery -A tasks.celery_app worker --loglevel=info
 
     # Terminal 3: Aplicación Flask
-    flask run --host=0.0.0.0 --port=8080
+    flask run --host=0.0.0.0 --port=8000
     ```
 
 5.  **Acceder y Usar:**
-    *   Abre tu navegador en `http://localhost:8080`.
+    *   Abre tu navegador en `http://localhost:8000`.
     *   Rellena el formulario y haz clic en "¡Crear Video!".
     *   Para la autenticación de YouTube, la primera vez se te pedirá que sigas un flujo de autenticación en la terminal donde se está ejecutando el worker de Celery.
 
