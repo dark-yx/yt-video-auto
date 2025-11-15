@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 
 client_secrets.json
+youtube-credentials.json
 
 # Contenido de medios generados
 *.txt
