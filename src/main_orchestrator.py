@@ -1,6 +1,7 @@
 
 import os
 import json
+import re
 from typing import List, TypedDict, Dict
 from langgraph.graph import StateGraph, END
 from celery import Task
@@ -17,10 +18,17 @@ from src.video_assembler import assemble_video
 from src.metadata_generator import generate_youtube_metadata
 from src.youtube_uploader import upload_video_to_youtube
 from src.utils import parse_lyrics_file
-import openai
-from src.config import OPENAI_API_KEY
 
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
+# --- Funciones de ayuda de ordenación ---
+def natural_sort_key(s):
+    """
+    Clave de ordenación natural para cadenas que contienen números.
+    Maneja correctamente casos como: 1_cancion_a.mp3, 1_cancion_b.mp3, 2_cancion_a.mp3
+    """
+    def atoi(text):
+        return int(text) if text.isdigit() else text.lower()
+    
+    return [atoi(c) for c in re.split(r'(\d+)', s)]
 
 # --- Definir el estado del agente ---
 class AgentState(TypedDict):
@@ -32,6 +40,8 @@ class AgentState(TypedDict):
     is_instrumental: bool
     with_subtitles: bool
     num_instrumental_songs: int
+    llm_model: str
+    suno_model: str
     lyrics_list: List[str]
     song_paths: List[str]
     metadata_path: str
@@ -94,14 +104,10 @@ def node_generate_lyrics(state: AgentState) -> Dict:
                 language=state.get("language", "spanish"),
                 gender=gender,
                 song_index=song_index,
-                total_songs=total_songs
+                total_songs=total_songs,
+                llm_model=state.get("llm_model", "openai/gpt-4o-mini")
             )
         
-        # Añadir el género al final del contenido de forma programática para asegurar consistencia
-        if not is_instrumental:
-            gender = "Femenino" if i < num_female else "Masculino"
-            content = content.strip() + f"\n\nGENERO: {gender}"
-
         lyrics_list.append(content)
 
         # Guardar el archivo .txt inmediatamente
@@ -125,18 +131,14 @@ def node_create_songs(state: AgentState) -> Dict:
 
     lyrics_list = state["lyrics_list"]
     song_paths = []
-    final_lyrics_for_video = [] # Use a new list for lyrics that successfully become songs
+    final_lyrics_for_video = []
 
     for i, lyrics_file_content in enumerate(lyrics_list):
-        # Use the new robust parser
         parsed_data = parse_lyrics_file(lyrics_file_content)
-        
-        # The 'song_style' from the initial state can be a fallback if tags are not in the file
         tags = parsed_data['tags'] if parsed_data['tags'] else state["song_style"]
         
         update_progress(task, 2, TOTAL_STEPS, f"Generando canción {i+1}/{len(lyrics_list)} ('{parsed_data['title']}') con voz {parsed_data['gender']}...")
 
-        # Create and download the song(s) using the parsed data
         new_song_paths = create_and_download_song(
             client=state["suno_client"],
             lyrics=parsed_data['prompt'],
@@ -144,18 +146,26 @@ def node_create_songs(state: AgentState) -> Dict:
             song_title=parsed_data['title'],
             vocal_gender=parsed_data['gender'],
             is_instrumental=state.get("is_instrumental", False),
-            task_instance=task
+            task_instance=task,
+            suno_model=state.get("suno_model", "chirp-crow")
         )
         
         if new_song_paths:
             song_paths.extend(new_song_paths)
-            # Only add the lyrics to the final list if a song was successfully created
             final_lyrics_for_video.append(parsed_data['prompt'])
 
     if not song_paths:
         raise ValueError("No se pudo generar ninguna canción.")
 
-    # Return the paths of the created songs and the corresponding lyrics for the video assembler
+    # IMPORTANTE: Ordenar antes de retornar
+    song_paths = sorted(song_paths, key=natural_sort_key)
+    
+    # DEBUG: Imprimir el orden final
+    print("\n=== ORDEN FINAL DE CANCIONES ===")
+    for idx, path in enumerate(song_paths, 1):
+        print(f"{idx}. {os.path.basename(path)}")
+    print("================================\n")
+
     return {"song_paths": song_paths, "lyrics_list": final_lyrics_for_video}
 
 def node_assemble_video(state: AgentState) -> Dict:
@@ -326,8 +336,15 @@ def resume_video_workflow(initial_state: dict):
     print("Iniciando el flujo de trabajo de reanudación de video...")
     
     def get_files_by_ext(directory, extensions):
-        if not os.path.exists(directory): return []
-        return [os.path.join(directory, f) for f in os.listdir(directory) if not f.startswith('.') and any(f.endswith(ext) for ext in extensions)]
+        """Busca archivos de forma recursiva y devuelve una lista de rutas."""
+        if not os.path.exists(directory): 
+            return []
+        all_files = []
+        for root, _, files in os.walk(directory):
+            for f in files:
+                if not f.startswith('.') and any(f.endswith(ext) for ext in extensions):
+                    all_files.append(os.path.join(root, f))
+        return all_files
 
     # 1. Inspeccionar el estado del sistema de archivos
     report_files = get_files_by_ext(PUBLICATION_REPORTS_DIR, ['.json'])
@@ -337,39 +354,94 @@ def resume_video_workflow(initial_state: dict):
     lyrics_files = get_files_by_ext(LYRICS_DIR, ['.txt'])
     song_files = get_files_by_ext(SONGS_DIR, ['.mp3'])
     clip_files = get_files_by_ext(CLIPS_DIR, ['.mp4', '.mov'])
-    metadata_files = get_files_by_ext(METADATA_DIR, ['.json'])
+    metadata_files = get_files_by_ext(METADATA_DIR, ['.json', '.txt'])  # Agregado .json
     final_video_exists = os.path.exists(VIDEO_OUTPUT_PATH)
 
     # 2. Construir el estado inicial
     state = AgentState(**initial_state)
-    state['lyrics_list'] = [open(f, 'r', encoding='utf-8').read() for f in sorted(lyrics_files)]
-    state['song_paths'] = sorted(song_files)
+    
+    # IMPORTANTE: Ordenar todos los archivos con natural_sort_key
+    lyrics_files_sorted = sorted(lyrics_files, key=natural_sort_key)
+    song_files_sorted = sorted(song_files, key=natural_sort_key)
+    metadata_files_sorted = sorted(metadata_files, key=natural_sort_key)
+    
+    # DEBUG: Mostrar el orden de los archivos detectados
+    print("\n=== ARCHIVOS DETECTADOS PARA REANUDACIÓN ===")
+    print(f"\n📝 Letras encontradas ({len(lyrics_files_sorted)}):")
+    for idx, f in enumerate(lyrics_files_sorted, 1):
+        print(f"  {idx}. {os.path.basename(f)}")
+    
+    print(f"\n🎵 Canciones encontradas ({len(song_files_sorted)}):")
+    for idx, f in enumerate(song_files_sorted, 1):
+        print(f"  {idx}. {os.path.basename(f)}")
+    
+    print(f"\n🎬 Clips de video encontrados ({len(clip_files)}):")
+    for idx, f in enumerate(sorted(clip_files, key=natural_sort_key), 1):
+        print(f"  {idx}. {os.path.basename(f)}")
+    print("=============================================\n")
+    
+    # Leer las letras en orden
+    state['lyrics_list'] = []
+    for f in lyrics_files_sorted:
+        try:
+            with open(f, 'r', encoding='utf-8') as file:
+                content = file.read()
+                # Extraer solo el prompt/lyrics del contenido usando el parser
+                parsed_data = parse_lyrics_file(content)
+                state['lyrics_list'].append(parsed_data['prompt'])
+        except Exception as e:
+            print(f"⚠️ Advertencia: No se pudo leer {os.path.basename(f)}: {e}")
+            # Si falla el parsing, usar el contenido completo
+            with open(f, 'r', encoding='utf-8') as file:
+                state['lyrics_list'].append(file.read())
+    
+    # Asignar las canciones en orden
+    state['song_paths'] = song_files_sorted
     state['final_video_path'] = VIDEO_OUTPUT_PATH if final_video_exists else None
     state['user_prompt'] = "Sesión Reanudada"
     state['song_style'] = "Estilo Reanudado"
+    state['suno_model'] = initial_state.get('suno_model', 'chirp-auk-turbo')
     
-    if metadata_files:
-        state['metadata_path'] = metadata_files[0]
+    if metadata_files_sorted:
+        state['metadata_path'] = metadata_files_sorted[0]
     else:
         state['metadata_path'] = None
 
     # 3. Determinar el punto de reanudación
     if final_video_exists and state['metadata_path']:
         state['resume_from_node'] = "upload_to_youtube"
+        print("✅ Reanudando desde: Subida a YouTube (video y metadata listos)")
     elif final_video_exists:
         state['resume_from_node'] = "generate_metadata"
-    elif lyrics_files and song_files:
+        print("✅ Reanudando desde: Generación de metadata (video listo)")
+    elif lyrics_files_sorted and song_files_sorted:
         if not clip_files:
             raise ValueError("Faltan clips de video. Por favor, añade archivos .mp4 o .mov a la carpeta 'clips' para continuar.")
         state['resume_from_node'] = "assemble_video"
-    elif lyrics_files:
+        print(f"✅ Reanudando desde: Ensamblaje de video ({len(song_files_sorted)} canciones listas)")
+    elif lyrics_files_sorted:
         state['resume_from_node'] = "create_songs"
+        print(f"✅ Reanudando desde: Creación de canciones ({len(lyrics_files_sorted)} letras listas)")
     else:
         raise ValueError("No hay suficiente progreso para reanudar. Inicia un nuevo proceso.")
 
+    # Validación adicional: verificar que las letras y canciones coincidan en cantidad
+    if state['resume_from_node'] == "assemble_video":
+        if len(state['lyrics_list']) != len(state['song_paths']):
+            print(f"⚠️ ADVERTENCIA: Discrepancia detectada!")
+            print(f"   - Letras: {len(state['lyrics_list'])}")
+            print(f"   - Canciones: {len(state['song_paths'])}")
+            
+            # Ajustar al mínimo común para evitar errores
+            min_count = min(len(state['lyrics_list']), len(state['song_paths']))
+            state['lyrics_list'] = state['lyrics_list'][:min_count]
+            state['song_paths'] = state['song_paths'][:min_count]
+            print(f"   ➡️ Ajustado a {min_count} elementos para ambos")
+
     # 4. Invocar el grafo
+    print("\n🚀 Iniciando ejecución del workflow...\n")
     final_state = app_graph.invoke(state)
-    print("--- Flujo de trabajo de reanudación completado ---")
+    print("\n--- Flujo de trabajo de reanudación completado ---")
     
     return {
         "youtube_url": final_state.get("youtube_url"),

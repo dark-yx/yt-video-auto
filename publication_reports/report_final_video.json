@@ -1,0 +1,36 @@
+{
+    "user_prompt": "Sesión Reanudada",
+    "song_style": "Estilo Reanudado",
+    "youtube_url": "https://www.youtube.com/watch?v=xODrwHNViTI",
+    "final_video_path": "output/final_video.mp4",
+    "video_metadata": {
+        "title": "Título: ¡Despierta tu Grandeza! | El Himno de la Abundancia",
+        "description": "",
+        "tags": [
+            "Descripción: En este poderoso video musical",
+            "te invitamos a reanudar tu camino hacia la grandeza. Con un ritmo motivador y letras inspiradoras",
+            "\"Sesión Reanudada\" te empoderará a tomar el control de tu destino y atraer la abundancia que mereces. Únete a nosotros en este viaje de transformación personal y descubre cómo tus pensamientos pueden moldear tu realidad. ¡Es hora de levantarse",
+            "respirar y brillar!"
+        ]
+    },
+    "song_paths": [
+        "songs/1_Mi_mente_prospera.mp3",
+        "songs/1_Mi_Vida_Es_Un_Canto.mp3",
+        "songs/1_Poder_de_Ahora.mp3",
+        "songs/1_Riqueza.mp3",
+        "songs/1_Soy_Abundancia.mp3",
+        "songs/1_Soy_Abundante.mp3",
+        "songs/1_Yo_Soy_Rico.mp3",
+        "songs/1_ZA_Aqui_y_Ahora.mp3",
+        "songs/1_ZC_Aquí_Ahora.mp3",
+        "songs/2_Mi_mente_prospera.mp3",
+        "songs/2_Mi_Vida_Es_Un_Canto.mp3",
+        "songs/2_Poder_de_Ahora.mp3",
+        "songs/2_Riqueza.mp3",
+        "songs/2_Soy_Abundancia.mp3",
+        "songs/2_Soy_Abundante.mp3",
+        "songs/2_Yo_Soy_Rico.mp3",
+        "songs/2_ZA_Aqui_y_Ahora.mp3",
+        "songs/2_ZC_Aquí_Ahora_.mp3"
+    ]
+}

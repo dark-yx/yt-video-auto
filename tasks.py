@@ -39,7 +39,7 @@ celery_app.conf.update(
 # --- Definición de la Tarea de Celery ---
 
 @celery_app.task(bind=True)
-def create_video_task(self, user_prompt, song_style, is_instrumental, language, with_subtitles, num_female_songs, num_male_songs, num_instrumental_songs):
+def create_video_task(self, user_prompt, song_style, is_instrumental, language, with_subtitles, num_female_songs, num_male_songs, num_instrumental_songs, llm_model, suno_model):
     """
     Esta es la tarea de Celery que se ejecuta en segundo plano.
     'bind=True' hace que la instancia de la tarea (self) esté disponible,
@@ -60,6 +60,8 @@ def create_video_task(self, user_prompt, song_style, is_instrumental, language, 
             "num_female_songs": num_female_songs,
             "num_male_songs": num_male_songs,
             "num_instrumental_songs": num_instrumental_songs,
+            "llm_model": llm_model,
+            "suno_model": suno_model,
             "task_instance": self,  # Pasamos la instancia de la tarea al estado
             "suno_client": client # Pasamos el cliente instanciado
         }
@@ -85,7 +87,7 @@ def create_video_task(self, user_prompt, song_style, is_instrumental, language, 
 
 
 @celery_app.task(bind=True)
-def resume_video_workflow_task(self, is_instrumental, with_subtitles):
+def resume_video_workflow_task(self, is_instrumental, with_subtitles, suno_model):
     """
     Tarea de Celery para reanudar el proceso de creación de video.
     """
@@ -98,6 +100,7 @@ def resume_video_workflow_task(self, is_instrumental, with_subtitles):
         initial_state = {
             "is_instrumental": is_instrumental,
             "with_subtitles": with_subtitles,
+            "suno_model": suno_model,
             "task_instance": self,
             "suno_client": client # Pasamos el cliente instanciado
         }

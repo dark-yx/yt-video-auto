@@ -10,7 +10,7 @@ from celery import Task
 # --- Configuración de Rendimiento ---
 PERFORMANCE_CONFIG = {
     'codec': 'h264_videotoolbox',
-    'bitrate': '2500k',
+    'bitrate': '5000k',
     'audio_codec': 'aac',
     'audio_bitrate': '128k',
     'threads': 2,
@@ -105,7 +105,7 @@ def assemble_video(song_paths: list[str], lyrics_list: list[str], with_subtitles
         temp_dir = Path(OUTPUT_DIR) / "temp_ffmpeg"
         temp_dir.mkdir(parents=True, exist_ok=True)
 
-        video_files = sorted([os.path.join(CLIPS_DIR, f) for f in os.listdir(CLIPS_DIR) if f.lower().endswith(('.mp4', '.mov'))])
+        video_files = sorted([os.path.join(CLIPS_DIR, f) for f in os.listdir(CLIPS_DIR) if f.lower().endswith(('.mp4', '.mov', '.m4v'))])
         if not video_files: raise FileNotFoundError(f"No se encontraron videos en '{CLIPS_DIR}'.")
 
         video_concat_path = temp_dir / f"video_concat_{os.getpid()}.mp4"

@@ -1,4 +1,3 @@
-
 import os
 import time
 import httplib2
@@ -7,7 +6,6 @@ from googleapiclient.http import MediaFileUpload
 from googleapiclient.errors import HttpError
 from oauth2client.client import flow_from_clientsecrets
 from oauth2client.file import Storage
-from oauth2client.tools import run_flow
 from celery import Task
 
 from src.config import CLIENT_SECRETS_FILE
@@ -15,45 +13,60 @@ from src.config import CLIENT_SECRETS_FILE
 YOUTUBE_UPLOAD_SCOPE = "https://www.googleapis.com/auth/youtube.upload"
 YOUTUBE_API_SERVICE_NAME = "youtube"
 YOUTUBE_API_VERSION = "v3"
+CREDENTIALS_FILE = os.path.join(os.getcwd(), 'youtube-credentials.json')
+
+# --- Funciones para el Flujo de Autenticación Web (OAuth2) ---
+
+def get_auth_flow():
+    """Crea y devuelve un objeto de flujo OAuth2."""
+    if not os.path.exists(CLIENT_SECRETS_FILE):
+        raise FileNotFoundError(
+            f"El archivo de secretos de cliente '{CLIENT_SECRETS_FILE}' no se encontró. "
+            "Asegúrate de que esté en la raíz del proyecto."
+        )
+    # El redirect_uri debe coincidir exactamente con el que configuraste en Google Cloud Console
+    return flow_from_clientsecrets(
+        CLIENT_SECRETS_FILE, 
+        scope=YOUTUBE_UPLOAD_SCOPE,
+        redirect_uri='http://127.0.0.1:8000/oauth2callback'
+    )
+
+def exchange_code_for_credentials(code: str):
+    """
+    Intercambia un código de autorización por credenciales y las guarda en el archivo.
+    """
+    flow = get_auth_flow()
+    credentials = flow.step2_exchange(code)
+    storage = Storage(CREDENTIALS_FILE)
+    storage.put(credentials)
+    return credentials
+
+# --- Función Principal para el Servicio Autenticado ---
 
 def get_authenticated_service():
     """
-    Obtiene el objeto de servicio de la API de YouTube, manejando la autenticación OAuth2.
+    Obtiene el objeto de servicio de la API de YouTube autenticado.
+    Asume que 'youtube-credentials.json' ya existe y es válido.
     """
-    credential_path = os.path.join(os.getcwd(), 'youtube-credentials.json')
-    storage = Storage(credential_path)
+    if not os.path.exists(CREDENTIALS_FILE):
+        # Este error ahora le indica al frontend que debe iniciar el flujo de autenticación.
+        raise FileNotFoundError("No se encontraron credenciales de YouTube. Por favor, autoriza la aplicación primero.")
+
+    storage = Storage(CREDENTIALS_FILE)
     credentials = storage.get()
 
     if not credentials or credentials.invalid:
-        if not os.path.exists(CLIENT_SECRETS_FILE):
-            raise FileNotFoundError(
-                f"El archivo '{CLIENT_SECRETS_FILE}' no se encontró. "
-                "Por favor, descarga tus credenciales de cliente OAuth 2.0 desde Google Cloud Console "
-                "y guárdalas en la raíz del proyecto."
-            )
-        
-        # Este es un flujo interactivo. Se requerirá que el usuario copie un enlace en su navegador
-        # y pegue un código de autorización en el terminal.
-        flow = flow_from_clientsecrets(CLIENT_SECRETS_FILE, scope=YOUTUBE_UPLOAD_SCOPE)
-        
-        class Args:
-            auth_host_name = 'localhost'
-            noauth_local_webserver = False
-            auth_host_port = [8000, 8090]
-            logging_level = 'ERROR'
-        
-        print("\n--- INICIO DE AUTENTICACIÓN DE YOUTUBE ---")
-        print("Se requiere tu intervención para autorizar la subida de videos.")
-        print("Por favor, sigue las instrucciones en el terminal.")
-        
-        credentials = run_flow(flow, storage, Args())
-        
-        print("--- AUTENTICACIÓN DE YOUTUBE COMPLETADA ---\n")
+        raise Exception("Las credenciales de YouTube son inválidas o han expirado. Por favor, re-autoriza la aplicación.")
 
-    return build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION, http=credentials.authorize(httplib2.Http()))
+    return build(
+        YOUTUBE_API_SERVICE_NAME, 
+        YOUTUBE_API_VERSION, 
+        http=credentials.authorize(httplib2.Http())
+    )
+
+# --- Lógica de Subida de Video (sin cambios) ---
 
 def resumable_upload(insert_request, task_instance: Task):
-    """Maneja la lógica de subida resumible y los reintentos."""
     response = None
     error = None
     retry = 0
@@ -62,7 +75,6 @@ def resumable_upload(insert_request, task_instance: Task):
     while response is None:
         try:
             if task_instance:
-                # El progreso se mantiene estático durante la subida
                 task_instance.update_state(state='PROGRESS', meta={'details': 'Subiendo archivo a YouTube...', 'progress': '95%'})
             
             status, response = insert_request.next_chunk()
@@ -82,7 +94,7 @@ def resumable_upload(insert_request, task_instance: Task):
             retry += 1
             if retry > MAX_RETRIES:
                 raise RuntimeError("Se superó el número máximo de reintentos para la subida a YouTube.")
-            time.sleep((2 ** retry) + 1) # Backoff exponencial
+            time.sleep((2 ** retry) + 1)
 
 def upload_video_to_youtube(video_path: str, title: str, description: str, tags: list, task_instance: Task, privacy_status="private") -> str:
     """
@@ -96,7 +108,7 @@ def upload_video_to_youtube(video_path: str, title: str, description: str, tags:
                 "title": title,
                 "description": description,
                 "tags": tags,
-                "categoryId": "10" # Categoría 10 es "Música"
+                "categoryId": "10" # Música
             },
             "status": {"privacyStatus": privacy_status}
         }
@@ -117,5 +129,4 @@ def upload_video_to_youtube(video_path: str, title: str, description: str, tags:
             
     except Exception as e:
         print(f"Error durante la carga a YouTube: {e}")
-        # Relanzamos la excepción para que la tarea de Celery falle
         raise

@@ -71,6 +71,13 @@
         <form action="/resume" method="POST">
             <div class="form-options">
                 <div>
+                    <label for="suno_model">Modelo de Suno:</label>
+                    <select name="suno_model" id="suno_model">
+                        <option value="chirp-auk-turbo" selected>Standard (v2 - chirp-auk-turbo)</option>
+                        <option value="chirp-crow">Premium (v3 - chirp-crow)</option>
+                    </select>
+                </div>
+                <div>
                     <input type="checkbox" name="instrumental" id="instrumental">
                     <label for="instrumental">Es Instrumental</label>
                 </div>

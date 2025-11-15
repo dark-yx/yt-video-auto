@@ -4,6 +4,7 @@ from flask import Flask, render_template, request, redirect, url_for, jsonify, s
 from tasks import create_video_task, celery_app, resume_video_workflow_task
 from celery.result import AsyncResult
 from src.suno_api import SunoApiClient
+from src.youtube_uploader import get_auth_flow, exchange_code_for_credentials
 from src.config import (
     LYRICS_DIR, SONGS_DIR, CLIPS_DIR, OUTPUT_DIR, METADATA_DIR, 
     PUBLICATION_REPORTS_DIR, VIDEO_OUTPUT_PATH
@@ -26,6 +27,35 @@ app.config['SUNO_COOKIE'] = os.environ.get('SUNO_COOKIE', '')
 OUTPUT_FOLDER = 'output'
 SONGS_FOLDER = 'songs'
 
+# --- Rutas de Autenticación de YouTube ---
+
+@app.route('/authorize-youtube')
+def authorize_youtube():
+    """
+    Inicia el flujo de autenticación de YouTube redirigiendo al usuario a Google.
+    """
+    try:
+        flow = get_auth_flow()
+        auth_uri = flow.step1_get_authorize_url()
+        return redirect(auth_uri)
+    except Exception as e:
+        return f"Error al iniciar la autenticación: {e}", 500
+
+@app.route('/oauth2callback')
+def oauth2callback():
+    """
+    Callback de Google. Intercambia el código de autorización por credenciales.
+    """
+    code = request.args.get('code')
+    if not code:
+        return "Error: No se recibió el código de autorización de Google.", 400
+    try:
+        exchange_code_for_credentials(code)
+        # Redirige a la página principal con un parámetro de éxito
+        return redirect(url_for('index', auth_success='true'))
+    except Exception as e:
+        return f"Error al intercambiar el código por credenciales: {e}", 500
+
 # --- Rutas de la aplicación web ---
 
 @app.route('/', methods=['GET', 'POST'])
@@ -33,6 +63,8 @@ def index():
     if request.method == 'POST':
         user_prompt = request.form['prompt']
         song_style = request.form['style']
+        llm_model = request.form.get('llm_model', 'openai/gpt-4o-mini')
+        suno_model = request.form.get('suno_model', 'chirp-crow')
         is_instrumental = 'is_instrumental' in request.form
         language = request.form.get('language', 'spanish')
         with_subtitles = 'with_subtitles' in request.form
@@ -55,7 +87,9 @@ def index():
             with_subtitles=with_subtitles,
             num_female_songs=num_female_songs,
             num_male_songs=num_male_songs,
-            num_instrumental_songs=num_instrumental_songs
+            num_instrumental_songs=num_instrumental_songs,
+            llm_model=llm_model,
+            suno_model=suno_model
         )
         return redirect(url_for('status', job_id=task.id))
     return render_template('index.html')
@@ -74,9 +108,11 @@ def resume():
     if request.method == 'POST':
         is_instrumental = 'instrumental' in request.form
         with_subtitles = 'subtitles' in request.form
+        suno_model = request.form.get('suno_model', 'chirp-auk-turbo')
         task = resume_video_workflow_task.delay(
             is_instrumental=is_instrumental,
-            with_subtitles=with_subtitles
+            with_subtitles=with_subtitles,
+            suno_model=suno_model
         )
         return redirect(url_for('status', job_id=task.id))
 

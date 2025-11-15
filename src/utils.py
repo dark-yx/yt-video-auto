@@ -3,63 +3,59 @@ import re
 def parse_lyrics_file(file_content: str) -> dict:
     """
     Parses the content of a lyric file to extract title, prompt, tags, and gender
-    in a more robust way.
+    in a more robust way using splits.
     """
-    # --- Default values ---
     parsed_data = {
         'title': 'Untitled Song',
         'prompt': '',
         'tags': '',
-        'gender': 'female'
+        'gender': 'female'  # Default gender
     }
 
-    # --- Extract TITLE ---
-    title_match = re.search(r'TITLE:(.*)', file_content, re.IGNORECASE)
-    if title_match:
-        title = title_match.group(1).strip().strip("'\"")
-        if title:
-            parsed_data['title'] = title
-
-    # --- Find indices of all section headers ---
-    def find_section_start(keyword, content):
-        match = re.search(r'\n\s*' + keyword, content, re.IGNORECASE)
-        return match.start() if match else -1
-
-    prompt_start = find_section_start('PROMPT:', file_content)
-    tags_start = find_section_start('TAGS:', file_content)
-    genero_start = find_section_start('GENERO:', file_content)
-
-    # --- Extract PROMPT ---
-    if prompt_start != -1:
-        end_of_prompt = len(file_content)
-        if tags_start > prompt_start:
-            end_of_prompt = tags_start
-        elif genero_start > prompt_start:
-            end_of_prompt = genero_start
+    try:
+        # Use regex split to handle case-insensitivity and potential surrounding whitespace/newlines
+        # The pattern looks for the keyword at the beginning of a line.
         
-        prompt_content_start = file_content.find('\n', prompt_start + 1)
-        if prompt_content_start != -1:
-            parsed_data['prompt'] = file_content[prompt_content_start:end_of_prompt].strip()
+        # --- Extract TITLE from the header part ---
+        header_parts = re.split(r'^\s*PROMPT:', file_content, maxsplit=1, flags=re.IGNORECASE | re.MULTILINE)
+        header = header_parts[0]
+        
+        title_match = re.search(r'TITLE:(.*)', header, flags=re.IGNORECASE)
+        if title_match:
+            title = title_match.group(1).strip().strip("'\"")
+            if title:
+                parsed_data['title'] = title
 
-    # --- Extract TAGS ---
-    if tags_start != -1:
-        end_of_tags = len(file_content)
-        if genero_start > tags_start:
-            end_of_tags = genero_start
+        # --- Extract PROMPT, TAGS, and GENERO from the rest of the body ---
+        if len(header_parts) > 1:
+            body = header_parts[1]
+            
+            # Split body by TAGS
+            prompt_parts = re.split(r'^\s*TAGS:', body, maxsplit=1, flags=re.IGNORECASE | re.MULTILINE)
+            prompt_content = prompt_parts[0].strip()
+            if prompt_content:
+                parsed_data['prompt'] = prompt_content
+            
+            if len(prompt_parts) > 1:
+                tags_body = prompt_parts[1]
+                
+                # Split tags part by GENERO
+                tags_parts = re.split(r'^\s*GENERO:', tags_body, maxsplit=1, flags=re.IGNORECASE | re.MULTILINE)
+                tags_content = tags_parts[0].strip()
+                if tags_content:
+                    parsed_data['tags'] = tags_content
+                
+                if len(tags_parts) > 1:
+                    genero_content = tags_parts[1].strip().lower()
+                    if 'femenino' in genero_content:
+                        parsed_data['gender'] = 'female'
+                    elif 'masculino' in genero_content:
+                        parsed_data['gender'] = 'male'
 
-        tags_content_start = file_content.find('\n', tags_start + 1)
-        if tags_content_start != -1:
-            parsed_data['tags'] = file_content[tags_content_start:end_of_tags].strip()
+    except Exception as e:
+        print(f"Error parsing lyrics file with new logic: {e}. The generated .txt file might have a format issue.")
+        # If the new logic fails, we can add a fallback to a simpler method or just return defaults.
+        # For now, we let it return the defaults for the fields it couldn't parse.
+        pass
 
-    # --- Extract GENERO ---
-    if genero_start != -1:
-        # Find the start of the content for GENERO
-        match = re.search(r'GENERO:(.*)', file_content, re.IGNORECASE | re.DOTALL)
-        if match:
-            gender_content = match.group(1).strip().lower()
-            if 'femenino' in gender_content:
-                parsed_data['gender'] = 'female'
-            elif 'masculino' in gender_content:
-                parsed_data['gender'] = 'male'
-    
     return parsed_data

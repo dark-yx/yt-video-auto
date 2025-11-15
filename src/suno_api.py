@@ -76,9 +76,14 @@ class SunoApiClient:
         if not self.session_id:
             self.initialize_session()
         
-        project_id = "f84fd8f1-51f5-4a98-b272-b3d4ed52c9d8"
+        project_id = "363d63b8-02a8-4938-b400-7f7eafddc768" # This project_id was present in the user's example payload for chirp-auk-turbo
 
-        payload = {
+        # Translate 'female'/'male' to 'f'/'m' for the API
+        suno_gender = 'f'  # Default to female
+        if str(vocal_gender).lower() == 'male':
+            suno_gender = 'm'
+
+        base_payload = {
             "project_id": project_id,
             "generation_type": "TEXT",
             "mv": mv,
@@ -87,8 +92,11 @@ class SunoApiClient:
             "title": title,
             "make_instrumental": make_instrumental,
             "transaction_uuid": str(uuid.uuid4()),
-            "token": None,
-            "metadata": {
+            "token": None, # As per user's latest info, this is null for both models
+        }
+
+        if mv == "chirp-crow":
+            metadata = {
                 "create_mode": "custom",
                 "stream": True,
                 "priority": 10,
@@ -102,14 +110,24 @@ class SunoApiClient:
                 "create_session_token": str(uuid.uuid4()),
                 "disable_volume_normalization": False,
             }
-        }
-
-        if not make_instrumental:
-            # Translate 'female'/'male' to 'f'/'m' for the API
-            suno_gender = 'f'  # Default to female
-            if str(vocal_gender).lower() == 'male':
-                suno_gender = 'm'
-            payload["metadata"]["vocal_gender"] = suno_gender
+            if not make_instrumental:
+                metadata["vocal_gender"] = suno_gender
+        elif mv == "chirp-auk-turbo":
+            metadata = {
+                "web_client_pathname": "/create",
+                "is_max_mode": False,
+                "create_mode": "custom",
+                "can_control_sliders": ["weirdness_constraint", "style_weight"],
+                "create_session_token": str(uuid.uuid4()), # This was a specific UUID in example, but likely dynamic
+                "disable_volume_normalization": False,
+                "user_tier": "4497580c-f4eb-4f86-9f0e-960eb7c48d7d", # This was a specific UUID in example, but likely dynamic
+            }
+            if not make_instrumental:
+                metadata["vocal_gender"] = suno_gender
+        else:
+            raise ValueError(f"Modelo Suno '{mv}' no soportado.")
+        
+        payload = {**base_payload, "metadata": metadata}
         
         response = self.session.post(f"{self.api_base_url}/generate/v2-web/", json=payload)
         

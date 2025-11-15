@@ -26,6 +26,18 @@
             <label for="style">Estilo Musical:</label>
             <input type="text" name="style" id="style" required placeholder="Ej: Pop rock, acústico, cinematográfico">
 
+            <label for="llm_model">Modelo de Lenguaje (para letras y metadatos):</label>
+            <select name="llm_model" id="llm_model">
+                <option value="openai/gpt-4o-mini" selected>OpenAI (GPT-4o-mini)</option>
+                <option value="groq/openai/gpt-oss-120b">Groq (openai/gpt-oss-120b)</option>
+            </select>
+
+            <label for="suno_model">Modelo de Suno (para generación de canciones):</label>
+            <select name="suno_model" id="suno_model">
+                <option value="chirp-crow" selected>Premium (v3 - chirp-crow)</option>
+                <option value="chirp-auk-turbo">Standard (v2 - chirp-auk-turbo)</option>
+            </select>
+
             <div>
                 <input type="checkbox" name="is_instrumental" id="is_instrumental">
                 <label for="is_instrumental">Es Instrumental</label>
@@ -61,6 +73,14 @@
 
             <button type="submit">¡Crear Video!</button>
         </form>
+
+        <div style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #ddd; text-align: center;">
+            <div id="auth-success-message" style="color: green; margin-bottom: 1rem;"></div>
+            <p style="font-size: 0.9rem; color: #666;">
+                ¿La subida a YouTube falla? Es posible que necesites autorizar la aplicación.
+                <a href="/authorize-youtube">Autorizar con YouTube</a>
+            </p>
+        </div>
     </div>
 
     <script>
@@ -75,6 +95,15 @@
             document.getElementById('num_male_songs').required = !isInstrumental;
             document.getElementById('num_instrumental_songs').required = isInstrumental;
         });
+
+        // Mostrar mensaje de éxito de autenticación
+        window.onload = function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('auth_success') === 'true') {
+                const messageDiv = document.getElementById('auth-success-message');
+                messageDiv.textContent = '¡Autorización con YouTube completada con éxito!';
+            }
+        };
     </script>
 </body>
 </html>
