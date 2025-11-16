@@ -73,13 +73,12 @@ class SunoApiClient:
         return response.json()
 
     def generate(self, tags, title, prompt, make_instrumental, vocal_gender='female', mv="chirp-crow"):
-        if not self.session_id:
+        if not self.session_id or not self.auth_token:
             self.initialize_session()
         
-        project_id = "363d63b8-02a8-4938-b400-7f7eafddc768" # This project_id was present in the user's example payload for chirp-auk-turbo
+        project_id = "af4ba7ad-a82b-48c7-b936-54b17c1e5a44"
 
-        # Translate 'female'/'male' to 'f'/'m' for the API
-        suno_gender = 'f'  # Default to female
+        suno_gender = 'f'
         if str(vocal_gender).lower() == 'male':
             suno_gender = 'm'
 
@@ -92,7 +91,7 @@ class SunoApiClient:
             "title": title,
             "make_instrumental": make_instrumental,
             "transaction_uuid": str(uuid.uuid4()),
-            "token": None, # As per user's latest info, this is null for both models
+            "token": self.auth_token, # CORREGIDO: Usar el token de autenticación
         }
 
         if mv == "chirp-crow":
@@ -118,9 +117,9 @@ class SunoApiClient:
                 "is_max_mode": False,
                 "create_mode": "custom",
                 "can_control_sliders": ["weirdness_constraint", "style_weight"],
-                "create_session_token": str(uuid.uuid4()), # This was a specific UUID in example, but likely dynamic
+                "create_session_token": str(uuid.uuid4()),
                 "disable_volume_normalization": False,
-                "user_tier": "4497580c-f4eb-4f86-9f0e-960eb7c48d7d", # This was a specific UUID in example, but likely dynamic
+                "user_tier": "4497580c-f4eb-4f86-9f0e-960eb7c48d7d",
             }
             if not make_instrumental:
                 metadata["vocal_gender"] = suno_gender

@@ -15,7 +15,12 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from celery import Celery, Task
-from src.main_orchestrator import run_video_workflow, resume_video_workflow
+from src.main_orchestrator import (
+    resume_video_workflow, 
+    node_generate_song_plan,
+    node_generate_lyrics_drafts, 
+    node_refine_lyrics
+)
 from src.suno_api import SunoApiClient
 
 # --- Configuración de Logging ---
@@ -39,55 +44,56 @@ celery_app.conf.update(
 # --- Definición de la Tarea de Celery ---
 
 @celery_app.task(bind=True)
-def create_video_task(self, user_prompt, song_style, is_instrumental, language, with_subtitles, num_female_songs, num_male_songs, num_instrumental_songs, llm_model, suno_model):
+def create_video_task(self, user_prompt, song_style, is_instrumental, language, with_subtitles, refine_lyrics, num_female_songs, num_male_songs, num_instrumental_songs, llm_model, suno_model):
     """
-    Esta es la tarea de Celery que se ejecuta en segundo plano.
-    'bind=True' hace que la instancia de la tarea (self) esté disponible,
-    lo que es crucial para actualizar el estado.
+    Tarea de Celery que genera los borradores de letras y se detiene,
+    permitiendo la revisión manual del usuario.
     """
     try:
-        self.update_state(state='STARTED', meta={'details': 'Iniciando el proceso...'})
+        self.update_state(state='STARTED', meta={'details': 'Iniciando la generación de letras...'})
         
         client = SunoApiClient()
-        client.initialize_session() # Pre-autenticar al inicio de la tarea
+        client.initialize_session()
 
         initial_state = {
-            "user_prompt": user_prompt,
-            "song_style": song_style,
-            "is_instrumental": is_instrumental,
-            "language": language,
-            "with_subtitles": with_subtitles,
-            "num_female_songs": num_female_songs,
-            "num_male_songs": num_male_songs,
+            "user_prompt": user_prompt, "song_style": song_style,
+            "is_instrumental": is_instrumental, "language": language,
+            "with_subtitles": with_subtitles, "refine_lyrics": refine_lyrics,
+            "num_female_songs": num_female_songs, "num_male_songs": num_male_songs,
             "num_instrumental_songs": num_instrumental_songs,
-            "llm_model": llm_model,
-            "suno_model": suno_model,
-            "task_instance": self,  # Pasamos la instancia de la tarea al estado
-            "suno_client": client # Pasamos el cliente instanciado
+            "llm_model": llm_model, "suno_model": suno_model,
+            "task_instance": self, "suno_client": client
         }
 
-        # Llamamos a nuestra lógica principal del orquestador.
-        # run_video_workflow ahora aceptará la instancia de la tarea (self).
-        final_result = run_video_workflow(initial_state)
+        # 1. Generar el PLAN de canciones
+        plan_state = node_generate_song_plan(initial_state)
+        current_state = {**initial_state, **plan_state}
 
-        # Si todo va bien, el estado final es SUCCESS
-        # y el resultado contiene la información del video final.
+        # 2. Generar los BORRADORES de letras usando el plan
+        draft_state = node_generate_lyrics_drafts(current_state)
+        current_state.update(draft_state)
+
+        # 3. Refinar las letras si el usuario lo solicitó
+        if refine_lyrics and not is_instrumental:
+            refine_state = node_refine_lyrics(current_state)
+            current_state.update(refine_state)
+        
+        self.update_state(state='PROGRESS', meta={'details': 'Letras generadas. Proceso en pausa para revisión manual.', 'progress': '100%'})
+
         return {
             'state': 'SUCCESS',
-            'details': '¡Video completado y subido!',
-            'result': final_result
+            'details': 'Letras generadas y listas para su revisión. Por favor, ve a la página de "Reanudar Proceso" para editar y continuar.',
+            'result': 'LYRICS_GENERATED'
         }
 
     except Exception as e:
-        logger.error(f"La tarea ha fallado: {e}", exc_info=True)
-        # Si algo sale mal, actualizamos el estado a FAILURE.
+        logger.error(f"La tarea de generación de letras ha fallado: {e}", exc_info=True)
         self.update_state(state='FAILURE', meta={'details': str(e)})
-        # Esto es útil para manejar excepciones de forma explícita.
         return {'state': 'FAILURE', 'details': str(e)}
 
 
 @celery_app.task(bind=True)
-def resume_video_workflow_task(self, is_instrumental, with_subtitles, suno_model):
+def resume_video_workflow_task(self, is_instrumental, with_subtitles, suno_model, llm_model):
     """
     Tarea de Celery para reanudar el proceso de creación de video.
     """
@@ -101,6 +107,7 @@ def resume_video_workflow_task(self, is_instrumental, with_subtitles, suno_model
             "is_instrumental": is_instrumental,
             "with_subtitles": with_subtitles,
             "suno_model": suno_model,
+            "llm_model": llm_model,
             "task_instance": self,
             "suno_client": client # Pasamos el cliente instanciado
         }

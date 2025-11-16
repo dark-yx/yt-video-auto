@@ -30,6 +30,7 @@
             <select name="llm_model" id="llm_model">
                 <option value="openai/gpt-4o-mini" selected>OpenAI (GPT-4o-mini)</option>
                 <option value="groq/openai/gpt-oss-120b">Groq (openai/gpt-oss-120b)</option>
+                <option value="gemini/gemini-1.5-flash">Google (Gemini 1.5 Flash)</option>
             </select>
 
             <label for="suno_model">Modelo de Suno (para generación de canciones):</label>
@@ -54,6 +55,11 @@
             </div>
 
             <div id="vocal-songs-container">
+                <div>
+                    <input type="checkbox" name="refine_lyrics" id="refine_lyrics" checked>
+                    <label for="refine_lyrics">Refinar letras con IA (usa más tokens)</label>
+                </div>
+
                 <label for="num_female_songs">Canciones con Voz Femenina:</label>
                 <input type="number" name="num_female_songs" id="num_female_songs" min="0" max="25" value="1" required>
 

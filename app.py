@@ -68,7 +68,8 @@ def index():
         is_instrumental = 'is_instrumental' in request.form
         language = request.form.get('language', 'spanish')
         with_subtitles = 'with_subtitles' in request.form
-        
+        refine_lyrics = 'refine_lyrics' in request.form
+
         num_female_songs = 0
         num_male_songs = 0
         num_instrumental_songs = 0
@@ -85,6 +86,7 @@ def index():
             is_instrumental=is_instrumental,
             language=language,
             with_subtitles=with_subtitles,
+            refine_lyrics=refine_lyrics,
             num_female_songs=num_female_songs,
             num_male_songs=num_male_songs,
             num_instrumental_songs=num_instrumental_songs,
@@ -109,10 +111,12 @@ def resume():
         is_instrumental = 'instrumental' in request.form
         with_subtitles = 'subtitles' in request.form
         suno_model = request.form.get('suno_model', 'chirp-auk-turbo')
+        llm_model = request.form.get('llm_model', 'openai/gpt-4o-mini') # Añadido
         task = resume_video_workflow_task.delay(
             is_instrumental=is_instrumental,
             with_subtitles=with_subtitles,
-            suno_model=suno_model
+            suno_model=suno_model,
+            llm_model=llm_model # Añadido
         )
         return redirect(url_for('status', job_id=task.id))
 
@@ -132,6 +136,42 @@ def resume():
     }
 
     return render_template('resume.html', status=status_data)
+
+
+@app.route('/review_lyrics', methods=['GET'])
+def review_lyrics():
+    """
+    Muestra una página para editar todas las letras generadas.
+    """
+    lyrics_data = []
+    if os.path.exists(LYRICS_DIR):
+        for filename in sorted(os.listdir(LYRICS_DIR)):
+            if filename.endswith('.txt') and not filename.startswith('.'):
+                filepath = os.path.join(LYRICS_DIR, filename)
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                lyrics_data.append({'filename': filename, 'content': content})
+    
+    return render_template('review_lyrics.html', lyrics=lyrics_data)
+
+@app.route('/save_lyrics', methods=['POST'])
+def save_lyrics():
+    """
+    Guarda las letras editadas desde el formulario de revisión.
+    """
+    for filename, content in request.form.items():
+        # Asegurarse de que el archivo que se intenta escribir esté dentro del directorio de letras
+        safe_filename = os.path.basename(filename)
+        filepath = os.path.join(LYRICS_DIR, safe_filename)
+        
+        # Comprobación de seguridad para evitar Path Traversal
+        if os.path.abspath(os.path.dirname(filepath)) != os.path.abspath(LYRICS_DIR):
+            return "Error: Intento de escritura de archivo no autorizado.", 400
+            
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(content)
+    
+    return redirect(url_for('resume'))
 
 
 # --- Rutas de API --- #
@@ -168,7 +208,7 @@ def job_status_api(job_id):
                 'state': task.state,
                 'progress': task.info.get('progress', '100%'),
                 'details': task.info.get('details', 'Completado'),
-                'result': task.info
+                'result': task.info.get('result') # Corregido para desempaquetar el resultado
             }
         else:  # Otros estados como STARTED o PROGRESS
             response = {

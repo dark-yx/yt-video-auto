@@ -24,26 +24,32 @@
                         progressText.textContent = data.progress;
                         
                         // Comprobar si la tarea ha terminado
-                        if (data.state === 'SUCCESS' || data.state === 'FAILURE') {
-                            clearInterval(interval);
-                            progressBar.style.width = '100%';
-                            
                             if (data.state === 'SUCCESS') {
+                                clearInterval(interval);
+                                progressBar.style.width = '100%';
                                 progressText.textContent = '¡Completado!';
-                                document.querySelector('h1').textContent = '¡Video Generado con Éxito!';
-                                // Mostrar los resultados finales
-                                const result = data.result;
-                                resultDiv.innerHTML = `
-                                    <h3>${result.title}</h3>
-                                    <p><strong>Descripción:</strong> ${result.description}</p>
-                                    <p><strong>Enlace de YouTube:</strong> <a href="${result.youtube_url}" target="_blank">${result.youtube_url}</a></p>
-                                    <p><strong>Archivos generados:</strong></p>
-                                    <ul>
-                                        <li>Video: <a href="/videos/${result.video_path.split('/').pop()}">${result.video_path}</a></li>
-                                        ${result.song_paths.map(p => `<li>Canción: <a href="/songs/${p.split('/').pop()}">${p}</a></li>`).join('')}
-                                    </ul>
-                                    <a href="/" class="button">Crear otro video</a>
-                                `;
+
+                                if (data.result === 'LYRICS_GENERATED') {
+                                    document.querySelector('h1').textContent = 'Fase 1 Completada: Letras Generadas';
+                                    resultDiv.innerHTML = `
+                                        <p>${data.details}</p>
+                                        <a href="{{ url_for('resume') }}" class="button">Revisar Letras y Continuar</a>
+                                    `;
+                                } else {
+                                    document.querySelector('h1').textContent = '¡Video Generado con Éxito!';
+                                    const result = data.result;
+                                    resultDiv.innerHTML = `
+                                        <h3>${result.title}</h3>
+                                        <p><strong>Descripción:</strong> ${result.description}</p>
+                                        <p><strong>Enlace de YouTube:</strong> <a href="${result.youtube_url}" target="_blank">${result.youtube_url}</a></p>
+                                        <p><strong>Archivos generados:</strong></p>
+                                        <ul>
+                                            <li>Video: <a href="/videos/${result.video_path.split('/').pop()}">${result.video_path}</a></li>
+                                            ${result.song_paths.map(p => `<li>Canción: <a href="/songs/${p.split('/').pop()}">${p}</a></li>`).join('')}
+                                        </ul>
+                                        <a href="/" class="button">Crear otro video</a>
+                                    `;
+                                }
                             } else { // FAILURE
                                 progressText.textContent = '¡Error!';
                                 document.querySelector('h1').textContent = 'La Tarea ha Fallado';

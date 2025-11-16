@@ -11,7 +11,12 @@ from src.config import (
     LYRICS_DIR, SONGS_DIR, CLIPS_DIR, OUTPUT_DIR, 
     METADATA_DIR, PUBLICATION_REPORTS_DIR, VIDEO_OUTPUT_PATH
 )
-from src.lyric_generator import generate_lyrics_for_song, generate_instrumental_prompt_for_song
+from src.lyric_generator import (
+    generate_draft_lyrics, 
+    refine_lyrics, 
+    generate_instrumental_prompt_for_song,
+    generate_song_plan
+)
 from src.suno_handler import create_and_download_song
 from src.suno_api import SunoApiClient
 from src.video_assembler import assemble_video
@@ -39,9 +44,12 @@ class AgentState(TypedDict):
     language: str
     is_instrumental: bool
     with_subtitles: bool
+    refine_lyrics: bool # NUEVO: Flag para controlar el refinamiento
     num_instrumental_songs: int
     llm_model: str
     suno_model: str
+    song_plan: List[Dict] # NUEVO: Plan de canciones
+    draft_filepaths: List[str]
     lyrics_list: List[str]
     song_paths: List[str]
     metadata_path: str
@@ -62,44 +70,120 @@ def update_progress(task_instance: Task, step: int, total_steps: int, details: s
         meta={'details': details, 'progress': f'{progress_percentage}%'}
     )
 
-TOTAL_STEPS = 6 # Ajustado a 6 pasos incluyendo la creación del informe
+TOTAL_STEPS = 8 # Ajustado a 8 pasos (plan, borrador, etc.)
+
+# --- Lógica de enrutamiento condicional ---
+def should_refine_lyrics(state: AgentState) -> str:
+    """
+    Determina si se debe pasar al nodo de refinamiento o saltar directamente a la creación de canciones.
+    """
+    if state.get("is_instrumental"):
+        print("➡️ Decisión: Es instrumental, saltando refinamiento.")
+        return "create_songs"
+    if state.get("refine_lyrics", True): # Por defecto, refinar si no se especifica
+        print("➡️ Decisión: Proceder al refinamiento de letras.")
+        return "refine_lyrics"
+    else:
+        print("➡️ Decisión: Saltar el refinamiento de letras.")
+        return "create_songs"
 
 # --- Nodos del Grafo ---
 
-def node_generate_lyrics(state: AgentState) -> Dict:
+def node_generate_song_plan(state: AgentState) -> Dict:
     task = state["task_instance"]
-    update_progress(task, 1, TOTAL_STEPS, "Iniciando generación de letras...")
-
-    lyrics_list = []
-    os.makedirs(LYRICS_DIR, exist_ok=True)
+    update_progress(task, 1, TOTAL_STEPS, "Fase 1: Creando plan de canciones...")
 
     is_instrumental = state.get("is_instrumental", False)
-    num_female = state.get("num_female_songs", 0)
-    num_male = state.get("num_male_songs", 0)
-
     if is_instrumental:
         total_songs = state.get("num_instrumental_songs", 1)
     else:
-        total_songs = num_female + num_male
+        total_songs = state.get("num_female_songs", 0) + state.get("num_male_songs", 0)
 
-    for i in range(total_songs):
+    if total_songs == 0:
+        raise ValueError("El número total de canciones no puede ser cero.")
+
+    # Para canciones instrumentales, no necesitamos un plan de letras detallado.
+    if is_instrumental:
+        song_plan = [{"title": f"Instrumental Song {i+1}", "description": state["user_prompt"]} for i in range(total_songs)]
+        return {"song_plan": song_plan}
+
+    plan_str = generate_song_plan(
+        user_prompt=state["user_prompt"],
+        total_songs=total_songs,
+        language=state.get("language", "spanish"),
+        llm_model=state.get("llm_model", "openai/gpt-4o-mini")
+    )
+    
+    try:
+        plan_data = json.loads(plan_str)
+        song_plan = plan_data.get("song_plan", [])
+        if not song_plan or len(song_plan) != total_songs:
+            print(f"⚠️ Advertencia: El plan de canciones no se generó correctamente. Se generarán {total_songs} canciones sin un plan detallado.")
+            song_plan = [{"title": f"Song {i+1}", "description": state["user_prompt"]} for i in range(total_songs)]
+    except json.JSONDecodeError:
+        print("Error al decodificar el JSON del plan de canciones. Se generarán canciones sin un plan detallado.")
+        song_plan = [{"title": f"Song {i+1}", "description": state["user_prompt"]} for i in range(total_songs)]
+
+    # Guardar el plan en un archivo para que sea visible
+    os.makedirs(METADATA_DIR, exist_ok=True)
+    plan_filepath = os.path.join(METADATA_DIR, "song_plan.json")
+    with open(plan_filepath, 'w', encoding='utf-8') as f:
+        json.dump(song_plan, f, indent=4, ensure_ascii=False)
+    print(f"Plan de canciones guardado en: {plan_filepath}")
+
+    return {"song_plan": song_plan}
+
+
+def node_generate_lyrics_drafts(state: AgentState) -> Dict:
+    task = state["task_instance"]
+    update_progress(task, 2, TOTAL_STEPS, "Fase 2: Creando borradores de letras...")
+
+    song_plan = state.get("song_plan")
+    if not song_plan:
+        print("Plan de canciones no encontrado en el estado, intentando cargar desde archivo...")
+        plan_filepath = os.path.join(METADATA_DIR, "song_plan.json")
+        if os.path.exists(plan_filepath):
+            with open(plan_filepath, 'r', encoding='utf-8') as f:
+                song_plan = json.load(f)
+            print("Plan de canciones cargado exitosamente desde el archivo.")
+        else:
+            raise ValueError("No se encontró el plan de canciones ni en el estado ni en el archivo. No se puede continuar.")
+
+    draft_filepaths = []
+    os.makedirs(LYRICS_DIR, exist_ok=True)
+    generated_titles = set()
+    
+    total_songs = len(song_plan)
+    num_female = state.get("num_female_songs", 0)
+
+    for i, song_idea in enumerate(song_plan):
         song_index = i + 1
-        update_progress(task, 1, TOTAL_STEPS, f"Generando texto para canción {song_index}/{total_songs}...")
+        update_progress(task, 2, TOTAL_STEPS, f"Generando borrador {song_index}/{total_songs}: '{song_idea.get('title')}'...")
 
-        if is_instrumental:
+        # Determinar el género para esta canción específica
+        gender = "Femenino" if i < num_female else "Masculino"
+        
+        # Crear un prompt más detallado para el compositor de letras
+        detailed_prompt = (
+            f"Título de la canción: \"{song_idea.get('title')}\".\n"
+            f"Descripción del tema: \"{song_idea.get('description')}\".\n"
+            f"Basado en el concepto general: \"{state['user_prompt']}\"."
+        )
+
+        # Para instrumentales, el plan es más simple, solo generamos el prompt de Suno
+        if state.get("is_instrumental", False):
             content = generate_instrumental_prompt_for_song(
-                prompt=state["user_prompt"],
+                prompt=detailed_prompt,
                 song_style=state["song_style"],
                 language=state.get("language", "spanish"),
                 song_index=song_index,
                 total_songs=total_songs
             )
+            # Forzar el título del plan en el contenido
+            content = f"TITLE: {song_idea.get('title')}\n{content.split('TAGS:', 1)[-1]}"
         else:
-            # Determinar el género para la canción actual
-            gender = "Femenino" if i < num_female else "Masculino"
-            
-            content = generate_lyrics_for_song(
-                prompt=state["user_prompt"],
+            content = generate_draft_lyrics(
+                prompt=detailed_prompt,
                 song_style=state["song_style"],
                 language=state.get("language", "spanish"),
                 gender=gender,
@@ -108,43 +192,106 @@ def node_generate_lyrics(state: AgentState) -> Dict:
                 llm_model=state.get("llm_model", "openai/gpt-4o-mini")
             )
         
-        lyrics_list.append(content)
-
-        # Guardar el archivo .txt inmediatamente
         try:
+            # Asegurarse de que el título del plan se use, evitando el que genera el LLM
             parsed_data = parse_lyrics_file(content)
-            title = parsed_data.get('title', f'song_{song_index}')
-            safe_title = "".join(c for c in title if c.isalnum() or c in " _-").rstrip()
-            # Añadir el song_index al nombre del archivo para organización y evitar sobrescrituras
+            original_title = song_idea.get('title', f'song_{song_index}')
+            
+            # Reemplazar el título en el contenido por el del plan para consistencia
+            if parsed_data.get('title') != original_title:
+                print(f"Forzando título del plan: '{original_title}' sobre el título generado '{parsed_data.get('title')}'.")
+                content = content.replace(f"TITLE: {parsed_data.get('title')}", f"TITLE: {original_title}", 1)
+
+            new_title = original_title
+            suffix_n = 2
+            while new_title in generated_titles:
+                new_title = f"{original_title} ({suffix_n})"
+                suffix_n += 1
+
+            if new_title != original_title:
+                print(f"⚠️ Título duplicado detectado en el plan. Renombrando '{original_title}' a '{new_title}'.")
+                content = content.replace(f"TITLE: {original_title}", f"TITLE: {new_title}", 1)
+            
+            generated_titles.add(new_title)
+            
+            safe_title = "".join(c for c in new_title if c.isalnum() or c in " _-").rstrip()
             filepath = os.path.join(LYRICS_DIR, f"{song_index}_{safe_title}.txt")
+            
             with open(filepath, 'w', encoding='utf-8') as f:
                 f.write(content)
-            print(f"Texto de canción guardado en: {filepath}")
-        except Exception as e:
-            print(f"Error al guardar el archivo de letras para la canción {song_index}: {e}")
+            print(f"Borrador de canción guardado en: {filepath}")
+            draft_filepaths.append(filepath)
 
-    return {"lyrics_list": lyrics_list}
+        except Exception as e:
+            print(f"Error al procesar y guardar el borrador para la canción {song_index}: {e}")
+
+    return {"draft_filepaths": draft_filepaths}
+
+def node_refine_lyrics(state: AgentState) -> Dict:
+    task = state["task_instance"]
+    update_progress(task, 2, TOTAL_STEPS, "Fase 2: Refinando letras con modelo avanzado...")
+    
+    refined_lyrics_list = []
+    draft_filepaths = state["draft_filepaths"]
+
+    for i, filepath in enumerate(draft_filepaths):
+        update_progress(task, 2, TOTAL_STEPS, f"Refinando letra {i+1}/{len(draft_filepaths)}...")
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                draft_content = f.read()
+
+            refined_content = refine_lyrics(
+                initial_user_prompt=state["user_prompt"],
+                draft_lyrics_content=draft_content,
+                song_style=state["song_style"]
+            )
+            
+            # Sobrescribir el archivo con el contenido refinado
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(refined_content)
+            
+            print(f"Letra refinada y guardada en: {filepath}")
+            refined_lyrics_list.append(refined_content)
+        except Exception as e:
+            print(f"Error al refinar el archivo {filepath}: {e}")
+            # Si falla el refinamiento, añadir el contenido original a la lista
+            if 'draft_content' in locals():
+                refined_lyrics_list.append(draft_content)
+
+    return {"lyrics_list": refined_lyrics_list}
 
 def node_create_songs(state: AgentState) -> Dict:
     task = state["task_instance"]
-    update_progress(task, 2, TOTAL_STEPS, "Creando canciones con Suno...")
+    update_progress(task, 3, TOTAL_STEPS, "Fase 3: Creando canciones con Suno...")
 
-    lyrics_list = state["lyrics_list"]
+    # Si se saltó el refinamiento, las letras no estarán en el estado. Las leemos de los archivos.
+    lyrics_list = state.get("lyrics_list")
+    if not lyrics_list:
+        print("No se encontraron letras refinadas en el estado, leyendo desde los archivos de borrador.")
+        lyrics_list = []
+        draft_filepaths = state.get("draft_filepaths", [])
+        for filepath in draft_filepaths:
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    lyrics_list.append(f.read())
+            except Exception as e:
+                print(f"⚠️ Error al leer el archivo de borrador {filepath}: {e}")
+
     song_paths = []
     final_lyrics_for_video = []
 
     for i, lyrics_file_content in enumerate(lyrics_list):
         parsed_data = parse_lyrics_file(lyrics_file_content)
-        tags = parsed_data['tags'] if parsed_data['tags'] else state["song_style"]
+        tags = parsed_data.get('tags') or state["song_style"]
         
-        update_progress(task, 2, TOTAL_STEPS, f"Generando canción {i+1}/{len(lyrics_list)} ('{parsed_data['title']}') con voz {parsed_data['gender']}...")
+        update_progress(task, 3, TOTAL_STEPS, f"Generando canción {i+1}/{len(lyrics_list)} ('{parsed_data.get('title', 'N/A')}') con voz {parsed_data.get('gender', 'N/A')}...")
 
         new_song_paths = create_and_download_song(
             client=state["suno_client"],
-            lyrics=parsed_data['prompt'],
+            lyrics=parsed_data.get('prompt', ''),
             song_style=tags,
-            song_title=parsed_data['title'],
-            vocal_gender=parsed_data['gender'],
+            song_title=parsed_data.get('title', f'song_{i+1}'),
+            vocal_gender=parsed_data.get('gender'),
             is_instrumental=state.get("is_instrumental", False),
             task_instance=task,
             suno_model=state.get("suno_model", "chirp-crow")
@@ -152,15 +299,14 @@ def node_create_songs(state: AgentState) -> Dict:
         
         if new_song_paths:
             song_paths.extend(new_song_paths)
-            final_lyrics_for_video.append(parsed_data['prompt'])
+            # Añadir la letra correspondiente por cada canción generada para mantener la sincronización
+            final_lyrics_for_video.extend([parsed_data.get('prompt', '')] * len(new_song_paths))
 
     if not song_paths:
         raise ValueError("No se pudo generar ninguna canción.")
 
-    # IMPORTANTE: Ordenar antes de retornar
     song_paths = sorted(song_paths, key=natural_sort_key)
     
-    # DEBUG: Imprimir el orden final
     print("\n=== ORDEN FINAL DE CANCIONES ===")
     for idx, path in enumerate(song_paths, 1):
         print(f"{idx}. {os.path.basename(path)}")
@@ -170,7 +316,7 @@ def node_create_songs(state: AgentState) -> Dict:
 
 def node_assemble_video(state: AgentState) -> Dict:
     task = state["task_instance"]
-    update_progress(task, 3, TOTAL_STEPS, "Ensamblando el video...")
+    update_progress(task, 4, TOTAL_STEPS, "Fase 4: Ensamblando el video...")
 
     final_path = assemble_video(
         song_paths=state["song_paths"],
@@ -182,9 +328,8 @@ def node_assemble_video(state: AgentState) -> Dict:
 
 def node_generate_metadata(state: AgentState) -> Dict:
     task = state["task_instance"]
-    update_progress(task, 4, TOTAL_STEPS, "Generando metadatos para YouTube...")
+    update_progress(task, 5, TOTAL_STEPS, "Fase 5: Generando metadatos para YouTube...")
 
-    # Usar la primera letra como base para los metadatos
     base_lyrics = state["lyrics_list"][0] if state["lyrics_list"] else ""
 
     metadata_path = generate_youtube_metadata(
@@ -196,79 +341,34 @@ def node_generate_metadata(state: AgentState) -> Dict:
     return {"metadata_path": metadata_path}
 
 def node_upload_to_youtube(state: AgentState) -> Dict:
-
     task = state["task_instance"]
-
-    update_progress(task, 5, TOTAL_STEPS, "Subiendo a YouTube...")
-
-
-
-    # Leer los metadatos desde el archivo
+    update_progress(task, 6, TOTAL_STEPS, "Fase 6: Subiendo a YouTube...")
 
     with open(state["metadata_path"], 'r', encoding='utf-8') as f:
-
         lines = f.readlines()
-
         title = lines[0].replace("Title:", "").strip()
-
         description = lines[1].replace("Description:", "").strip()
-
         tags_str = lines[2].replace("Tags:", "").strip()
-
         tags = [tag.strip() for tag in tags_str.split(',')]
 
-
-
     video_url = upload_video_to_youtube(
-
         video_path=state["final_video_path"],
-
         title=title,
-
         description=description,
-
         tags=tags,
-
         task_instance=task,
-
         privacy_status="private"
-
     )
-
     return {"youtube_url": video_url}
 
 def node_create_publication_report(state: AgentState) -> Dict:
     task = state["task_instance"]
-    update_progress(task, 6, TOTAL_STEPS, "Creando informe de publicación...")
-    
-    os.makedirs(PUBLICATION_REPORTS_DIR, exist_ok=True)
-    report_filename = f"report_{os.path.splitext(os.path.basename(state['final_video_path']))[0]}.txt"
-    report_filepath = os.path.join(PUBLICATION_REPORTS_DIR, report_filename)
-
-    report_content = {
-        "user_prompt": state.get("user_prompt"),
-        "song_style": state.get("song_style"),
-        "youtube_url": state.get("youtube_url"),
-        "final_video_path": state.get("final_video_path"),
-        "metadata_path": state.get("metadata_path"),
-        "song_paths": state.get("song_paths"),
-    }
-
-    with open(report_filepath, 'w', encoding='utf-8') as f:
-        json.dump(report_content, f, indent=4)
-
-    print(f"Informe de publicación guardado en: {report_filepath}")
-    return {}
-
-def node_create_publication_report(state: AgentState) -> Dict:
-    task = state["task_instance"]
-    update_progress(task, 6, TOTAL_STEPS, "Creando informe de publicación...")
+    update_progress(task, 7, TOTAL_STEPS, "Fase 7: Creando informe de publicación...")
     
     os.makedirs(PUBLICATION_REPORTS_DIR, exist_ok=True)
     report_filename = f"report_{os.path.splitext(os.path.basename(state['final_video_path']))[0]}.json"
     report_filepath = os.path.join(PUBLICATION_REPORTS_DIR, report_filename)
 
-    # Re-leer los metadatos del archivo para el informe
     with open(state["metadata_path"], 'r', encoding='utf-8') as f:
         lines = f.readlines()
         title = lines[0].replace("Title:", "").strip()
@@ -298,11 +398,13 @@ def route_workflow(state: AgentState) -> str:
     if state.get("resume_from_node"):
         print(f"Reanudando flujo de trabajo desde el nodo: {state['resume_from_node']}")
         return state["resume_from_node"]
-    print("Iniciando nuevo flujo de trabajo desde 'generate_lyrics'")
-    return "generate_lyrics"
+    print("Iniciando nuevo flujo de trabajo desde 'generate_song_plan'")
+    return "generate_song_plan"
 
 workflow = StateGraph(AgentState)
-workflow.add_node("generate_lyrics", node_generate_lyrics)
+workflow.add_node("generate_song_plan", node_generate_song_plan)
+workflow.add_node("generate_lyrics_drafts", node_generate_lyrics_drafts)
+workflow.add_node("refine_lyrics", node_refine_lyrics)
 workflow.add_node("create_songs", node_create_songs)
 workflow.add_node("assemble_video", node_assemble_video)
 workflow.add_node("generate_metadata", node_generate_metadata)
@@ -311,7 +413,20 @@ workflow.add_node("create_publication_report", node_create_publication_report)
 
 workflow.set_conditional_entry_point(route_workflow)
 
-workflow.add_edge("generate_lyrics", "create_songs")
+# Flujo principal
+workflow.add_edge("generate_song_plan", "generate_lyrics_drafts")
+
+# Del borrador, decidimos si refinar o ir directo a crear la canción
+workflow.add_conditional_edges(
+    "generate_lyrics_drafts",
+    should_refine_lyrics,
+    {
+        "refine_lyrics": "refine_lyrics",
+        "create_songs": "create_songs"
+    }
+)
+
+workflow.add_edge("refine_lyrics", "create_songs")
 workflow.add_edge("create_songs", "assemble_video")
 workflow.add_edge("assemble_video", "generate_metadata")
 workflow.add_edge("generate_metadata", "upload_to_youtube")
@@ -354,18 +469,16 @@ def resume_video_workflow(initial_state: dict):
     lyrics_files = get_files_by_ext(LYRICS_DIR, ['.txt'])
     song_files = get_files_by_ext(SONGS_DIR, ['.mp3'])
     clip_files = get_files_by_ext(CLIPS_DIR, ['.mp4', '.mov'])
-    metadata_files = get_files_by_ext(METADATA_DIR, ['.json', '.txt'])  # Agregado .json
+    metadata_files = get_files_by_ext(METADATA_DIR, ['.json', '.txt'])
     final_video_exists = os.path.exists(VIDEO_OUTPUT_PATH)
 
     # 2. Construir el estado inicial
     state = AgentState(**initial_state)
     
-    # IMPORTANTE: Ordenar todos los archivos con natural_sort_key
     lyrics_files_sorted = sorted(lyrics_files, key=natural_sort_key)
     song_files_sorted = sorted(song_files, key=natural_sort_key)
     metadata_files_sorted = sorted(metadata_files, key=natural_sort_key)
     
-    # DEBUG: Mostrar el orden de los archivos detectados
     print("\n=== ARCHIVOS DETECTADOS PARA REANUDACIÓN ===")
     print(f"\n📝 Letras encontradas ({len(lyrics_files_sorted)}):")
     for idx, f in enumerate(lyrics_files_sorted, 1):
@@ -380,22 +493,9 @@ def resume_video_workflow(initial_state: dict):
         print(f"  {idx}. {os.path.basename(f)}")
     print("=============================================\n")
     
-    # Leer las letras en orden
-    state['lyrics_list'] = []
-    for f in lyrics_files_sorted:
-        try:
-            with open(f, 'r', encoding='utf-8') as file:
-                content = file.read()
-                # Extraer solo el prompt/lyrics del contenido usando el parser
-                parsed_data = parse_lyrics_file(content)
-                state['lyrics_list'].append(parsed_data['prompt'])
-        except Exception as e:
-            print(f"⚠️ Advertencia: No se pudo leer {os.path.basename(f)}: {e}")
-            # Si falla el parsing, usar el contenido completo
-            with open(f, 'r', encoding='utf-8') as file:
-                state['lyrics_list'].append(file.read())
+    state['draft_filepaths'] = lyrics_files_sorted # Asignar rutas de borradores para el refinamiento
+    state['lyrics_list'] = [] # La lista de letras se llenará después del refinamiento
     
-    # Asignar las canciones en orden
     state['song_paths'] = song_files_sorted
     state['final_video_path'] = VIDEO_OUTPUT_PATH if final_video_exists else None
     state['user_prompt'] = "Sesión Reanudada"
@@ -421,24 +521,31 @@ def resume_video_workflow(initial_state: dict):
         print(f"✅ Reanudando desde: Ensamblaje de video ({len(song_files_sorted)} canciones listas)")
     elif lyrics_files_sorted:
         state['resume_from_node'] = "create_songs"
-        print(f"✅ Reanudando desde: Creación de canciones ({len(lyrics_files_sorted)} letras listas)")
+        print(f"✅ Reanudando desde: Creación de canciones ({len(lyrics_files_sorted)} letras listas para procesar)")
     else:
         raise ValueError("No hay suficiente progreso para reanudar. Inicia un nuevo proceso.")
 
-    # Validación adicional: verificar que las letras y canciones coincidan en cantidad
     if state['resume_from_node'] == "assemble_video":
+        # Llenar la lista de letras desde los archivos para el ensamblador
+        for f in lyrics_files_sorted:
+            try:
+                with open(f, 'r', encoding='utf-8') as file:
+                    content = file.read()
+                    parsed_data = parse_lyrics_file(content)
+                    state['lyrics_list'].append(parsed_data['prompt'])
+            except Exception as e:
+                print(f"⚠️ Advertencia: No se pudo leer {os.path.basename(f)}: {e}")
+
         if len(state['lyrics_list']) != len(state['song_paths']):
             print(f"⚠️ ADVERTENCIA: Discrepancia detectada!")
             print(f"   - Letras: {len(state['lyrics_list'])}")
             print(f"   - Canciones: {len(state['song_paths'])}")
             
-            # Ajustar al mínimo común para evitar errores
             min_count = min(len(state['lyrics_list']), len(state['song_paths']))
             state['lyrics_list'] = state['lyrics_list'][:min_count]
             state['song_paths'] = state['song_paths'][:min_count]
             print(f"   ➡️ Ajustado a {min_count} elementos para ambos")
 
-    # 4. Invocar el grafo
     print("\n🚀 Iniciando ejecución del workflow...\n")
     final_state = app_graph.invoke(state)
     print("\n--- Flujo de trabajo de reanudación completado ---")

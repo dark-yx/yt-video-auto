@@ -97,6 +97,30 @@ def _ffmpeg_loop_with_concat_demuxer(video_path, audio_path, output_path, loops)
 # --- Función Principal de Ensamblaje ---
 
 def assemble_video(song_paths: list[str], lyrics_list: list[str], with_subtitles: bool = True, task_instance: Task = None) -> str:
+    # --- Modificación para Robustez ---
+    # Se ignora la lista de 'song_paths' de entrada y se escanea el directorio directamente
+    # para asegurar que SIEMPRE se usen todos los archivos de audio existentes.
+    
+    def natural_sort_key(s):
+        import re
+        def atoi(text):
+            return int(text) if text.isdigit() else text.lower()
+        return [atoi(c) for c in re.split(r'(\d+)', s)]
+
+    from src.config import SONGS_DIR
+    all_song_files = [os.path.join(SONGS_DIR, f) for f in os.listdir(SONGS_DIR) if f.lower().endswith(('.mp3', '.wav', '.aac'))]
+    if not all_song_files:
+        raise FileNotFoundError(f"No se encontraron archivos de audio en el directorio '{SONGS_DIR}'.")
+    
+    # Usar la lista de archivos escaneada y ordenada a partir de ahora
+    final_song_paths = sorted(all_song_files, key=natural_sort_key)
+    
+    print("\n=== ARCHIVOS DE AUDIO FINALES PARA EL VIDEO (Escaneo Directo) ===")
+    for idx, path in enumerate(final_song_paths, 1):
+        print(f"{idx}. {os.path.basename(path)}")
+    print("===============================================================\n")
+    # --- Fin de la Modificación ---
+
     subtitle_cache, moviepy_clips, temp_files = {}, [], []
     def update_status(details: str): print(details)
     try:
@@ -113,7 +137,7 @@ def assemble_video(song_paths: list[str], lyrics_list: list[str], with_subtitles
         temp_files.extend([video_concat_path, audio_concat_path])
 
         _ffmpeg_concatenate_files(video_files, video_concat_path, 'video')
-        _ffmpeg_concatenate_files(song_paths, audio_concat_path, 'audio')
+        _ffmpeg_concatenate_files(final_song_paths, audio_concat_path, 'audio') # Usar final_song_paths
 
         video_looped_path = temp_dir / f"video_looped_{os.getpid()}.mp4"
         temp_files.append(video_looped_path)
@@ -123,13 +147,23 @@ def assemble_video(song_paths: list[str], lyrics_list: list[str], with_subtitles
             import shutil
             shutil.copy(video_looped_path, VIDEO_OUTPUT_PATH)
         else:
+            # Si hay subtítulos, debemos asegurarnos de que las listas coincidan.
+            # La corrección en main_orchestrator.py es importante aquí.
+            # Si las listas no coinciden, el video se truncará, lo cual es un problema
+            # que se origina antes de esta función.
+            if len(lyrics_list) != len(final_song_paths):
+                print(f"⚠️ ADVERTENCIA: Discrepancia en el número de letras ({len(lyrics_list)}) y canciones ({len(final_song_paths)}).")
+                print("El video con subtítulos podría tener una duración incorrecta. El problema se origina antes del ensamblaje.")
+
             font_path = get_system_font_path()
             if not font_path: raise RuntimeError("No se encontró una fuente de sistema para los subtítulos.")
             final_video_base = VideoFileClip(str(video_looped_path))
             moviepy_clips.append(final_video_base)
-            audio_durations = [_get_duration_ffprobe(sp) for sp in song_paths]
+            
+            audio_durations = [_get_duration_ffprobe(sp) for sp in final_song_paths] # Usar final_song_paths
             audio_start_time = 0
             subtitle_clips = []
+
             for i, (lyrics, song_duration) in enumerate(zip(lyrics_list, audio_durations)):
                 lines = [line.strip() for line in lyrics.split('\n') if line.strip()]
                 if not lines: continue
@@ -141,6 +175,7 @@ def assemble_video(song_paths: list[str], lyrics_list: list[str], with_subtitles
                     fade_duration = min(PERFORMANCE_CONFIG['subtitle_fade_duration'], time_per_line / 3)
                     subtitle_clips.append(txt_clip.with_effects([vfx.CrossFadeIn(fade_duration), vfx.CrossFadeOut(fade_duration)]))
                 audio_start_time += song_duration
+            
             moviepy_clips.extend(subtitle_clips)
             final_composition = CompositeVideoClip([final_video_base] + subtitle_clips)
             final_composition.audio = final_video_base.audio

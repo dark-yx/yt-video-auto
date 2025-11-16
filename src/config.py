@@ -6,6 +6,7 @@ load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 SUNO_COOKIE = os.getenv("SUNO_COOKIE")
 
 if not OPENAI_API_KEY:
@@ -13,6 +14,9 @@ if not OPENAI_API_KEY:
 
 if not GROQ_API_KEY:
     raise ValueError("No se encontró la clave API de Groq. Asegúrese de que su archivo .env esté configurado correctamente.")
+
+if not GEMINI_API_KEY:
+    raise ValueError("No se encontró la clave API de Gemini. Asegúrese de que su archivo .env esté configurado correctamente.")
 
 if not SUNO_COOKIE:
     raise ValueError("No se encontró la cookie de Suno. Asegúrese de que su archivo .env esté configurado correctamente.")
