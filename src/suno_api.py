@@ -76,7 +76,7 @@ class SunoApiClient:
         if not self.session_id or not self.auth_token:
             self.initialize_session()
         
-        project_id = "af4ba7ad-a82b-48c7-b936-54b17c1e5a44"
+        project_id = "d92ff1eb-5aa5-44c8-9066-1ad23f228aaf"
 
         suno_gender = 'f'
         if str(vocal_gender).lower() == 'male':

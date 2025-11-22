@@ -254,3 +254,23 @@ La solicitud `POST` para generar una canción debe contener un payload JSON con 
 *   **Problema:** Errores de `AttributeError` como `set_duration`, `set_position`, etc.
     *   **Causa:** Estás usando una sintaxis de `moviepy` v1.x con una librería v2.0+.
     *   **Solución:** El código ha sido actualizado para usar la nueva API: `.with_duration()`, `.with_position()`, `.with_start()`, `.with_audio()`, y `.with_effects()`.
+
+## Nuevas Actualizaciones
+
+### Flujo de Refinamiento de Letras (Automático y Manual)
+
+El sistema ahora incluye un sofisticado flujo de dos pasos para mejorar la calidad de las letras antes de la generación musical, ofreciendo tanto una mejora automática con IA como una revisión manual por parte del usuario.
+
+1.  **Refinamiento Automático con IA (Opcional)**:
+    *   **Activación**: En el formulario principal, el usuario puede marcar la casilla "Refinar letras con IA".
+    *   **Proceso**: Si se activa, después de la generación inicial de las letras, el orquestador llama a un módulo (`src/lyric_generator.py`) que utiliza el modelo `gpt-4o-mini`. Se le da la instrucción de actuar como un "letrista de clase mundial" para mejorar la coherencia narrativa, la rima, el ritmo y la profundidad emocional de la letra.
+    *   **Resultado**: La versión mejorada por la IA sobrescribe el borrador inicial en la carpeta `/lyrics`.
+
+2.  **Revisión y Edición Manual**:
+    *   **Acceso**: Una vez que el flujo de trabajo inicial se detiene (después de generar las letras y, opcionalmente, refinarlas con IA), el usuario puede acceder a la ruta `/review_lyrics`.
+    *   **Interfaz**: Esta página (`templates/review_lyrics.html`) carga todas las letras generadas en cajas de texto editables.
+    *   **Proceso**: El usuario puede ajustar, corregir o reescribir por completo las letras. Al guardar los cambios, el contenido de los archivos en la carpeta `/lyrics` es sobrescrito con la versión del usuario.
+
+**Importante**: La versión de las letras que avanza a la etapa de generación musical con Suno es siempre la última versión guardada en la carpeta `/lyrics`, ya sea la refinada por la IA o la ajustada manualmente por el usuario. Esto da un control total sobre el resultado final.
+
+    
