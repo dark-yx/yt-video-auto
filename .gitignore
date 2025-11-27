@@ -11,6 +11,7 @@ youtube-credentials.json
 *.mp3
 *.m4a
 *.m4v
+*.json
 
 # Archivos DB_Store
 *.DS_Store

@@ -56,7 +56,9 @@ def _ffmpeg_concatenate_files(files, output_path, file_type):
     list_path = temp_dir / f"concat_{file_type}_{os.getpid()}.txt"
     with open(list_path, 'w') as f:
         for file in files:
-            f.write(f"file '{os.path.abspath(file)}'\n")
+            # Escapar comillas simples en la ruta del archivo para el formato de lista de FFmpeg
+            safe_path = os.path.abspath(file).replace("'", "'\\''")
+            f.write(f"file '{safe_path}'\n")
     cmd = ['ffmpeg', '-f', 'concat', '-safe', '0', '-i', str(list_path), '-c', 'copy', '-y', str(output_path)]
     try:
         subprocess.run(cmd, check=True, capture_output=True, text=True)
@@ -68,8 +70,14 @@ def _ffmpeg_loop_video_smart(video_path, audio_path, output_path):
     video_duration = _get_duration_ffprobe(video_path)
     audio_duration = _get_duration_ffprobe(audio_path)
     loops_needed = math.ceil(audio_duration / video_duration)
+    
+    print(f"DEBUG: Video Duration: {video_duration}")
+    print(f"DEBUG: Audio Duration: {audio_duration}")
+    print(f"DEBUG: Loops Needed: {loops_needed}")
+    
     try:
-        cmd = ['ffmpeg', '-stream_loop', str(loops_needed - 1), '-i', video_path, '-i', audio_path, '-map', '0:v', '-map', '1:a', '-c', 'copy', '-shortest', '-y', output_path]
+        # Removido -shortest para que el video tenga la duración COMPLETA del audio
+        cmd = ['ffmpeg', '-stream_loop', str(loops_needed - 1), '-i', video_path, '-i', audio_path, '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'copy', '-y', output_path]
         subprocess.run(cmd, check=True, capture_output=True, text=True)
         return output_path
     except subprocess.CalledProcessError as e:
@@ -87,7 +95,8 @@ def _ffmpeg_loop_with_concat_demuxer(video_path, audio_path, output_path, loops)
     try:
         cmd_loop = ['ffmpeg', '-f', 'concat', '-safe', '0', '-i', str(loop_list_path), '-c', 'copy', '-y', str(video_looped_path)]
         subprocess.run(cmd_loop, check=True, capture_output=True, text=True)
-        cmd_merge = ['ffmpeg', '-i', str(video_looped_path), '-i', audio_path, '-map', '0:v', '-map', '1:a', '-c', 'copy', '-shortest', '-y', output_path]
+        # Removido -shortest para que el video tenga la duración COMPLETA del audio
+        cmd_merge = ['ffmpeg', '-i', str(video_looped_path), '-i', audio_path, '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'copy', '-y', output_path]
         subprocess.run(cmd_merge, check=True, capture_output=True, text=True)
         return output_path
     finally:
@@ -143,18 +152,38 @@ def assemble_video(song_paths: list[str], lyrics_list: list[str], with_subtitles
         temp_files.append(video_looped_path)
         _ffmpeg_loop_video_smart(video_concat_path, audio_concat_path, video_looped_path)
 
-        if not with_subtitles:
+        if not with_subtitles or not lyrics_list:
+            # Sin subtítulos o sin letras disponibles: copiar directamente el video con audio completo
             import shutil
+            update_status("📝 Generando video sin subtítulos...")
             shutil.copy(video_looped_path, VIDEO_OUTPUT_PATH)
         else:
-            # Si hay subtítulos, debemos asegurarnos de que las listas coincidan.
-            # La corrección en main_orchestrator.py es importante aquí.
-            # Si las listas no coinciden, el video se truncará, lo cual es un problema
-            # que se origina antes de esta función.
+            # Con subtítulos: expandir letras si es necesario y generar subtítulos
+            update_status("📝 Preparando subtítulos...")
+            
+            # Expandir letras automáticamente si hay discrepancia
             if len(lyrics_list) != len(final_song_paths):
-                print(f"⚠️ ADVERTENCIA: Discrepancia en el número de letras ({len(lyrics_list)}) y canciones ({len(final_song_paths)}).")
-                print("El video con subtítulos podría tener una duración incorrecta. El problema se origina antes del ensamblaje.")
-
+                print(f"⚠️ Discrepancia en video_assembler: {len(lyrics_list)} letras vs {len(final_song_paths)} canciones")
+                if len(lyrics_list) > 0:
+                    # Expandir letras de forma cíclica para cubrir todas las canciones
+                    num_songs = len(final_song_paths)
+                    num_lyrics = len(lyrics_list)
+                    
+                    expanded_lyrics = []
+                    for i in range(num_songs):
+                        # Usar módulo para ciclar a través de las letras disponibles
+                        lyric_index = i % num_lyrics
+                        expanded_lyrics.append(lyrics_list[lyric_index])
+                    
+                    lyrics_list = expanded_lyrics
+                    print(f"✅ Letras expandidas automáticamente a {len(lyrics_list)} elementos (cíclicamente)")
+                else:
+                    print(f"⚠️ No hay letras disponibles, generando video sin subtítulos")
+                    import shutil
+                    shutil.copy(video_looped_path, VIDEO_OUTPUT_PATH)
+                    update_status(f"✅ ¡Video generado exitosamente! Guardado en: {VIDEO_OUTPUT_PATH}")
+                    return VIDEO_OUTPUT_PATH
+            
             font_path = get_system_font_path()
             if not font_path: raise RuntimeError("No se encontró una fuente de sistema para los subtítulos.")
             final_video_base = VideoFileClip(str(video_looped_path))

@@ -541,10 +541,31 @@ def resume_video_workflow(initial_state: dict):
             print(f"   - Letras: {len(state['lyrics_list'])}")
             print(f"   - Canciones: {len(state['song_paths'])}")
             
-            min_count = min(len(state['lyrics_list']), len(state['song_paths']))
-            state['lyrics_list'] = state['lyrics_list'][:min_count]
-            state['song_paths'] = state['song_paths'][:min_count]
-            print(f"   ➡️ Ajustado a {min_count} elementos para ambos")
+            # NUNCA truncar las canciones - siempre usar TODAS
+            # Solo ajustar las letras según si hay subtítulos o no
+            if state.get('with_subtitles', True):
+                # Con subtítulos: duplicar letras para que coincidan con las canciones
+                if len(state['lyrics_list']) > 0:
+                    num_songs = len(state['song_paths'])
+                    num_lyrics = len(state['lyrics_list'])
+                    
+                    # Expandir letras de forma cíclica para cubrir todas las canciones
+                    expanded_lyrics = []
+                    for i in range(num_songs):
+                        # Usar módulo para ciclar a través de las letras disponibles
+                        lyric_index = i % num_lyrics
+                        expanded_lyrics.append(state['lyrics_list'][lyric_index])
+                    
+                    state['lyrics_list'] = expanded_lyrics
+                    print(f"   ✅ Letras expandidas a {len(state['lyrics_list'])} para subtítulos (cíclicamente)")
+                else:
+                    print(f"   ⚠️ No hay letras disponibles para subtítulos")
+            else:
+                # Sin subtítulos: vaciar la lista de letras (no se usarán)
+                state['lyrics_list'] = []
+                print(f"   ✅ Subtítulos desactivados, omitiendo letras")
+            
+            print(f"   ➡️ Video usará TODAS las {len(state['song_paths'])} canciones")
 
     print("\n🚀 Iniciando ejecución del workflow...\n")
     final_state = app_graph.invoke(state)
