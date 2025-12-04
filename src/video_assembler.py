@@ -77,7 +77,8 @@ def _ffmpeg_loop_video_smart(video_path, audio_path, output_path):
     
     try:
         # Removido -shortest para que el video tenga la duración COMPLETA del audio
-        cmd = ['ffmpeg', '-stream_loop', str(loops_needed - 1), '-i', video_path, '-i', audio_path, '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'copy', '-y', output_path]
+        # Usar -t con la duración exacta del audio para cortar el video sobrante del último loop
+        cmd = ['ffmpeg', '-stream_loop', str(loops_needed), '-i', video_path, '-i', audio_path, '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'copy', '-t', str(audio_duration), '-y', output_path]
         subprocess.run(cmd, check=True, capture_output=True, text=True)
         return output_path
     except subprocess.CalledProcessError as e:
@@ -96,7 +97,8 @@ def _ffmpeg_loop_with_concat_demuxer(video_path, audio_path, output_path, loops)
         cmd_loop = ['ffmpeg', '-f', 'concat', '-safe', '0', '-i', str(loop_list_path), '-c', 'copy', '-y', str(video_looped_path)]
         subprocess.run(cmd_loop, check=True, capture_output=True, text=True)
         # Removido -shortest para que el video tenga la duración COMPLETA del audio
-        cmd_merge = ['ffmpeg', '-i', str(video_looped_path), '-i', audio_path, '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'copy', '-y', output_path]
+        # Usar -t con la duración exacta del audio para cortar el video sobrante
+        cmd_merge = ['ffmpeg', '-i', str(video_looped_path), '-i', audio_path, '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'copy', '-t', str(audio_duration), '-y', output_path]
         subprocess.run(cmd_merge, check=True, capture_output=True, text=True)
         return output_path
     finally:

@@ -221,29 +221,33 @@ def generate_song_plan(
     print(f"Generando plan de canciones para el prompt: '{user_prompt}'...")
 
     system_prompt = (
-        "Eres un productor musical y un conceptualizador creativo. Tu tarea es tomar una idea general para un álbum o una serie de canciones y desglosarla en una lista de temas de canciones únicos y originales. "
-        "Cada tema debe tener un título y una breve descripción que sirva de guía para un compositor. "
+        "Eres un productor musical y un conceptualizador creativo de talla mundial. Tu tarea es tomar una idea general para un álbum o una serie de canciones y desglosarla en una lista de temas de canciones únicos, originales y creativos. "
+        "Cada tema debe tener un título evocador y una breve descripción que sirva de guía para un compositor. "
+        "CRÍTICO: Debes evitar a toda costa títulos genéricos como 'Canción 1', 'Track 1', 'Intro', etc. Cada título debe ser una frase artística."
         "El objetivo es evitar la repetición y asegurar que cada canción explore un ángulo, emoción o momento diferente dentro del concepto general."
     )
 
     user_prompt_plan = (
         f"Basado en el siguiente concepto general, genera un plan para {total_songs} canciones únicas.\n"
         f"**Concepto General:** '{user_prompt}'\n"
-        f"**Idioma para los títulos y descripciones:** '{language}'\n\n"
-        "**Instrucciones de Formato:**\n"
-        "Devuelve tu respuesta como un único objeto JSON. La clave principal debe ser 'song_plan', y su valor debe ser un array de objetos.\n"
-        "Cada objeto en el array debe tener exactamente dos claves: 'title' (un título de canción creativo y único) y 'description' (una descripción de 1-3 frases sobre el enfoque, la emoción o la historia de esa canción específica).\n"
-        "Asegúrate de que no haya títulos duplicados y de que las descripciones guíen hacia letras distintas.\n\n"
-        "**Ejemplo de Salida:**\n"
+        f"**Idioma OBLIGATORIO para los títulos y descripciones:** '{language}'\n\n"
+        "**Instrucciones de Formato y Calidad:**\n"
+        "1. **Títulos Creativos:** NUNCA uses números o nombres genéricos (ej. NO 'Canción 1', NO 'Tema 2'). Usa títulos poéticos, intrigantes o descriptivos (ej. 'Ecos del Vacío', 'Bailando en la Tormenta', 'El Último Suspiro').\n"
+        "2. **Descripciones Únicas:** Cada descripción debe ser específica para ESE título. No repitas la misma frase del concepto general. Explica qué hace única a esta canción (tempo, emoción, historia específica).\n"
+        "3. **Idioma:** Asegúrate de que TANTO el título COMO la descripción estén en '{language}'.\n"
+        "4. **Formato JSON:** Devuelve tu respuesta como un único objeto JSON válido.\n\n"
+        "La clave principal debe ser 'song_plan', y su valor debe ser un array de objetos.\n"
+        "Cada objeto en el array debe tener exactamente dos claves: 'title' y 'description'.\n\n"
+        "**Ejemplo de Salida (para un concepto de 'Amor perdido' en Español):**\n"
         "{\n"
         '  "song_plan": [\n'
         '    {\n'
-        '      "title": "Ecos en la Lluvia",\n'
-        '      "description": "La canción de apertura. Trata sobre el recuerdo melancólico de un amor pasado, evocado por el sonido de la lluvia en la ventana. El tono es nostálgico y un poco triste."\n'
+        '      "title": "Cartas sin Enviar",\n'
+        '      "description": "Una balada lenta y acústica que explora el arrepentimiento de no haber dicho lo que se sentía a tiempo."\n'
         '    },\n'
         '    {\n'
-        '      "title": "Calles de Neón",\n'
-        '      "description": "Una canción más enérgica sobre la distracción y la soledad que se siente en una gran ciudad por la noche, intentando olvidar a esa persona. El ritmo es más rápido y la energía es de desesperación y búsqueda."\n'
+        '      "title": "Fuego en la Lluvia",\n'
+        '      "description": "Un tema más rápido y rockero que representa la ira y la confusión tras la ruptura, con metáforas de elementos opuestos."\n'
         '    }\n'
         '  ]\n'
         "}"
